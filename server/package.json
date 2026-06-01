@@ -1,0 +1,7 @@
+{
+  "name": "gensler-forge-server",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "node index.js", "start": "node index.js" },
+  "dependencies": { "cors": "^2.8.5", "express": "^4.19.2" }
+}
