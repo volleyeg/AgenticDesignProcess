@@ -5,6 +5,8 @@ import {
   Sun, Layers, History, BookOpen, Trash2, ChevronRight, CircleDot, Activity, Wifi, WifiOff,
 } from "lucide-react";
 import { GRID, KIND_COLORS, APPROACHES, SAMPLES, generateOptions, computeMetrics } from "./solver.js";
+import { generateShell } from "./bim/shellgen.js";
+import { buildShellModel } from "./bim/buildShell.js";
 import { buildBimModel } from "./bim/buildFromConstraints.js";
 import { writeIFC } from "./bim/ifc.js";
 import Viewer3D from "./bim/Viewer3D.jsx";
@@ -106,6 +108,8 @@ export default function App() {
   const [mode, setMode] = useState(null);
   const [diag, setDiag] = useState("");
   const [viewMode, setViewMode] = useState("2d");
+  const [shellInputs, setShellInputs] = useState({ areaFt2: 25000, aspect: 1.6, coreType: "central", corePosition: "center", stories: 12 });
+  const [shellView, setShellView] = useState("2d");
 
   useEffect(() => { setRunCount(parseInt(localStorage.getItem("forge:runs") || "0")); }, []);
 
@@ -179,6 +183,18 @@ export default function App() {
     [constraints, selected, options]
   );
 
+  const shell = useMemo(() => { try { return generateShell({ ...shellInputs, sprinklered: true }); } catch { return null; } }, [shellInputs]);
+  const shellModel = useMemo(() => (shell ? buildShellModel(shell) : null), [shell]);
+
+  function downloadShellIFC() {
+    if (!shellModel) return;
+    const blob = new Blob([writeIFC(shellModel)], { type: "application/x-step" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = (shellModel.meta.name || "shell").replace(/[^a-z0-9]+/gi, "_") + ".ifc";
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }
+
   function downloadIFC() {
     if (!bimModel) return;
     const text = writeIFC(bimModel);
@@ -229,6 +245,68 @@ export default function App() {
             <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)" }}>learning loop · {lessons.length} lesson(s) · {runCount} run(s){recalled > 0 && running ? ` · recalling ${recalled}` : ""}</span>
           </div>
         </div>
+
+        <Panel
+          title="Building Shell" icon={Boxes} accent="var(--cyan)"
+          right={
+            <div className="row gap6">
+              <button onClick={() => setShellView("2d")} className="chip" style={{ borderColor: shellView === "2d" ? "var(--cyan)" : "var(--line)", color: shellView === "2d" ? "var(--cyan)" : "var(--muted)" }}>2D</button>
+              <button onClick={() => setShellView("3d")} className="chip" style={{ borderColor: shellView === "3d" ? "var(--cyan)" : "var(--line)", color: shellView === "3d" ? "var(--cyan)" : "var(--muted)" }}>3D</button>
+            </div>
+          }
+        >
+          <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--muted)", marginBottom: 10 }}>
+            Rule-based shell — the real foundation (structural grid, curtain wall, and a code-sized core) the space plan snaps to. Every value comes from the editable North America rule pack, nothing hardcoded.
+          </div>
+          <div className="row" style={{ flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+            <label className="sfield">floor area (sf)
+              <input type="number" step="1000" value={shellInputs.areaFt2} onChange={(e) => setShellInputs((s) => ({ ...s, areaFt2: Math.max(2000, +e.target.value || 0) }))} className="sinp" />
+            </label>
+            <label className="sfield">aspect (w:h)
+              <input type="number" step="0.1" min="1" max="3" value={shellInputs.aspect} onChange={(e) => setShellInputs((s) => ({ ...s, aspect: Math.min(3, Math.max(1, +e.target.value || 1)) }))} className="sinp" />
+            </label>
+            <label className="sfield">stories
+              <input type="number" step="1" min="1" max="80" value={shellInputs.stories} onChange={(e) => setShellInputs((s) => ({ ...s, stories: Math.max(1, +e.target.value || 1) }))} className="sinp" />
+            </label>
+            <label className="sfield">core type
+              <select value={shellInputs.coreType} onChange={(e) => setShellInputs((s) => ({ ...s, coreType: e.target.value }))} className="sinp">
+                <option value="central">central</option><option value="side">side</option><option value="end">end</option>
+              </select>
+            </label>
+            <label className="sfield">core position
+              <select value={shellInputs.corePosition} onChange={(e) => setShellInputs((s) => ({ ...s, corePosition: e.target.value }))} className="sinp">
+                <option value="center">center</option><option value="north">north</option><option value="south">south</option><option value="east">east</option><option value="west">west</option>
+              </select>
+            </label>
+          </div>
+
+          {shell && shellModel && (
+            <>
+              <div style={{ padding: 6, background: "var(--panel)", borderRadius: 6 }}>
+                {shellView === "2d" ? <Plan2D model={shellModel} /> : <Viewer3D model={shellModel} />}
+              </div>
+              <div className="row" style={{ flexWrap: "wrap", gap: 14, marginTop: 10, fontFamily: "var(--mono)", fontSize: 10 }}>
+                <span style={{ color: "var(--ink)" }}>{shell.W}×{shell.H} ft{shell.highRise ? " · high-rise" : ""}</span>
+                <span style={{ color: "var(--muted)" }}>core <b style={{ color: "var(--cyan)" }}>{shell.core.areaPct}%</b></span>
+                <span style={{ color: "var(--muted)" }}>efficiency <b style={{ color: "var(--green)" }}>{shell.efficiency}%</b></span>
+                <span style={{ color: "var(--muted)" }}>occ/floor {shell.occupantLoad}</span>
+                <span style={{ color: "var(--muted)" }}>elevators <b style={{ color: "var(--ink)" }}>{shell.core.components.elevators.passenger}</b>+{shell.core.components.elevators.freight}f+{shell.core.components.elevators.fireSvc}fs</span>
+                <span style={{ color: "var(--muted)" }}>stairs {shell.egress.stairsRequired} · sep {shell.egress.separationActualFt}/{shell.egress.separationRequiredFt}ft {shell.egress.ok ? "✓" : "✗"}</span>
+                <span style={{ color: "var(--muted)" }}>WC {shell.core.components.restrooms.wcPerSex}/sex</span>
+              </div>
+              {shell.flags.length > 0 && (
+                <div style={{ marginTop: 8, fontFamily: "var(--mono)", fontSize: 9, color: "var(--amber)" }}>
+                  {shell.flags.map((f, i) => <div key={i}>⚠ {f}</div>)}
+                </div>
+              )}
+              <div className="row" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+                <button onClick={downloadShellIFC} className="run" style={{ background: "var(--cyan)", color: "#04222b", padding: "6px 12px" }}>
+                  <Boxes size={13} /> EXPORT SHELL IFC
+                </button>
+              </div>
+            </>
+          )}
+        </Panel>
 
         <Panel title="Project Brief" icon={BookOpen}>
           <div className="chips">{SAMPLES.map((s) => <button key={s.tag} className="chip" onClick={() => setBrief(s.text)}>{s.tag}</button>)}</div>

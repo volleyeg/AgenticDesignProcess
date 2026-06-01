@@ -102,8 +102,10 @@ export class BimModel {
   bounds() {
     // overall floor extent in feet
     const pts = [...this.spaces, ...this.cores, ...this.corridors].flatMap((e) => e.footprintFt);
-    if (!pts.length) return { minX: 0, minY: 0, maxX: 0, maxY: 0, wFt: 0, hFt: 0 };
-    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const colPts = this.columns.map((c) => [c.xFt, c.yFt]);
+    const all = [...pts, ...colPts];
+    if (!all.length) return { minX: 0, minY: 0, maxX: 0, maxY: 0, wFt: 0, hFt: 0 };
+    const xs = all.map((p) => p[0]), ys = all.map((p) => p[1]);
     const minX = Math.min(...xs), minY = Math.min(...ys), maxX = Math.max(...xs), maxY = Math.max(...ys);
     return { minX, minY, maxX, maxY, wFt: maxX - minX, hFt: maxY - minY };
   }

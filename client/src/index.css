@@ -73,3 +73,8 @@ h1{ font-family:var(--disp); color:var(--ink); font-size:30px; line-height:1.05;
 .lesson{ padding:6px; border-radius:5px; background:var(--panel-2); border:1px solid var(--line); }
 
 .foot{ margin-top:20px; text-align:center; font-family:var(--mono); font-size:9px; color:var(--muted); letter-spacing:.1em; }
+
+/* building-shell inputs */
+.sfield { display: flex; flex-direction: column; gap: 4px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
+.sinp { background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 6px 8px; font-family: var(--mono); font-size: 12px; min-width: 92px; }
+.sinp:focus { outline: none; border-color: var(--cyan); }

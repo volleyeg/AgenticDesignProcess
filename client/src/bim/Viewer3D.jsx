@@ -5,7 +5,8 @@ import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const KIND_HEX = { work: 0x56d4cf, meet: 0xe6a94e, social: 0x74e0a3, support: 0x8aa0b8, core: 0x586173 };
+const KIND_HEX = { work: 0x56d4cf, meet: 0xe6a94e, social: 0x74e0a3, support: 0x8aa0b8, core: 0x586173,
+  elevator: 0x7c8aa0, lobby: 0x5a6b82, restroom: 0x4a8fb0, shaft: 0x6a5f7a };
 
 export default function Viewer3D({ model, height = 340 }) {
   const mountRef = useRef(null);
@@ -71,6 +72,14 @@ export default function Viewer3D({ model, height = 340 }) {
       mesh.position.set(c.xFt, 5.5, c.yFt);
       group.add(mesh);
     });
+
+    // curtain-wall: thin full-height mullion posts around the perimeter
+    if (model.facade) {
+      const F = model.facade, mat = new THREE.MeshStandardMaterial({ color: 0x9fb0c4, metalness: 0.3, roughness: 0.5 });
+      const post = (x, z) => { const g = new THREE.BoxGeometry(0.4, 11, 0.4); const mm = new THREE.Mesh(g, mat); mm.position.set(x, 5.5, z); group.add(mm); };
+      (F.mullionsX || []).forEach((x) => { post(x, 0); post(x, F.H); });
+      (F.mullionsY || []).forEach((y) => { post(0, y); post(F.W, y); });
+    }
 
     scene.add(group);
 

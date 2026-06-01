@@ -67,6 +67,7 @@ export function generateShell({
   else if (occLoad > v(pack, "stair.occFor3")) stairCount = 3;
   const sw = v(pack, "stair.widthFt"), sd = v(pack, "stair.depthFt");
   const stairArea = stairCount * sw * sd;
+  const stairs = { count: stairCount, widthFt: sw, depthFt: sd, areaFt2: round(stairArea), rects: [] };
 
   // ---- restrooms (per sex, 50/50) ----
   const perSex = occLoad / 2;
@@ -101,24 +102,52 @@ export function generateShell({
   cx = max(0, min(cx, W - cw)); cy = max(0, min(cy, H - ch));
   const coreRect = { x: round(cx * 10) / 10, y: round(cy * 10) / 10, w: round(cw * 10) / 10, h: round(ch * 10) / 10 };
 
-  // ---- egress validation: required separation, then place stairs to meet it ----
+  // ---- egress: required separation, then place stairs (in-core if remote enough, else pulled apart) ----
   let sepReq;
   if (highRise) sepReq = min(v(pack, "stair.sepFloorMin"), diagonal * v(pack, "stair.sepHighRise"));
   else sepReq = diagonal * (sprinklered ? v(pack, "stair.sepSprink") : v(pack, "stair.sepNonSprink"));
+  const r1 = (n) => round(n * 10) / 10;
 
-  // place two primary stairs as far apart as the floor allows along its major axis
-  const margin = sw; // keep off the glass line
-  const horiz = W >= H;
-  const a = { w: sw, h: sd }, b = { w: sw, h: sd };
-  let sa, sb;
-  if (horiz) { sa = { x: margin, y: H / 2 - sd / 2 }; sb = { x: W - margin - sw, y: H / 2 - sd / 2 }; }
-  else { sa = { x: W / 2 - sw / 2, y: margin }; sb = { x: W / 2 - sw / 2, y: H - margin - sd }; }
+  const coreHoriz = cw >= ch;
+  let sa, sb, stairsInCore;
+  const saC = coreHoriz ? { x: cx, y: cy + ch / 2 - sd / 2 } : { x: cx + cw / 2 - sw / 2, y: cy };
+  const sbC = coreHoriz ? { x: cx + cw - sw, y: cy + ch / 2 - sd / 2 } : { x: cx + cw / 2 - sw / 2, y: cy + ch - sd };
+  const sepCore = coreHoriz ? cw - sw : ch - sd;
+  if (sepCore >= sepReq - 0.5) { sa = saC; sb = sbC; stairsInCore = true; }
+  else { // pull stairs to opposite extremes of the floor's major axis
+    const margin = sw, horiz = W >= H;
+    sa = horiz ? { x: margin, y: H / 2 - sd / 2 } : { x: W / 2 - sw / 2, y: margin };
+    sb = horiz ? { x: W - margin - sw, y: H / 2 - sd / 2 } : { x: W / 2 - sw / 2, y: H - margin - sd };
+    stairsInCore = false;
+  }
   const sepActual = Math.hypot((sa.x + sw / 2) - (sb.x + sw / 2), (sa.y + sd / 2) - (sb.y + sd / 2));
   const egressOk = sepActual >= sepReq - 0.5;
   if (!egressOk) flags.push(`stair separation ${round(sepActual)} ft < required ${round(sepReq)} ft (floor too compact)`);
+  stairs.rects = [{ x: r1(sa.x), y: r1(sa.y), w: sw, h: sd }, { x: r1(sb.x), y: r1(sb.y), w: sw, h: sd }];
 
-  const stairs = { count: stairCount, widthFt: sw, depthFt: sd, areaFt2: round(stairArea),
-    rects: [ { x: round(sa.x*10)/10, y: round(sa.y*10)/10, w: sw, h: sd }, { x: round(sb.x*10)/10, y: round(sb.y*10)/10, w: sw, h: sd } ] };
+  // ---- pack core components into drawable sub-rects (proportional bands along the core's major axis) ----
+  // reserve the two ends for stairs if they sit in the core
+  let ux = cx, uy = cy, uw = cw, uh = ch;
+  if (stairsInCore) { if (coreHoriz) { ux = cx + sw; uw = cw - 2 * sw; } else { uy = cy + sd; uh = ch - 2 * sd; } }
+  const usableHoriz = uw >= uh;
+  const parts = [
+    { key: "elevators", area: elevAreaRaw }, { key: "lobby", area: lobbyArea },
+    { key: "restroomM", area: restroomArea / 2 }, { key: "restroomW", area: restroomArea / 2 },
+    { key: "shafts", area: shaftArea + closetArea },
+  ];
+  const totalP = parts.reduce((s, p) => s + p.area, 0) || 1;
+  const packed = {}; let cur = usableHoriz ? ux : uy;
+  for (const p of parts) {
+    const span = (usableHoriz ? uw : uh) * (p.area / totalP);
+    packed[p.key] = usableHoriz
+      ? { x: r1(cur), y: r1(uy), w: r1(span), h: r1(uh) }
+      : { x: r1(ux), y: r1(cur), w: r1(uw), h: r1(span) };
+    cur += span;
+  }
+  elevators.rect = packed.elevators;
+  restrooms.rects = [packed.restroomM, packed.restroomW];
+  shafts.rect = packed.shafts;
+  const lobbyRect = packed.lobby;
 
   // ---- efficiency ----
   const efficiency = (area - coreArea) / area;
@@ -138,7 +167,7 @@ export function generateShell({
     facade,
     core: { type: coreType, position: corePosition, rect: coreRect, areaFt2: round(coreArea),
       areaPct: round((coreArea / area) * 1000) / 10,
-      components: { elevators, stairs, restrooms, shafts, lobbyFt2: round(lobbyArea), closetFt2: round(closetArea) } },
+      components: { elevators, stairs, restrooms, shafts, lobbyFt2: round(lobbyArea), lobbyRect, closetFt2: round(closetArea) } },
     egress: { stairsRequired: stairCount, separationRequiredFt: round(sepReq), separationActualFt: round(sepActual), ok: egressOk },
     efficiency: round(efficiency * 1000) / 10,
     flags,

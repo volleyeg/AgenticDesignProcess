@@ -2,7 +2,8 @@
 // 2D plan drawn FROM the BIM model (in feet) — same source of truth as the 3D view.
 import React from "react";
 
-const KIND = { work: "var(--cyan)", meet: "var(--amber)", social: "var(--green)", support: "var(--slate-z)" };
+const KIND = { work: "var(--cyan)", meet: "var(--amber)", social: "var(--green)", support: "var(--slate-z)",
+  elevator: "#7c8aa0", lobby: "#5a6b82", restroom: "#4a8fb0", shaft: "#6a5f7a" };
 
 export default function Plan2D({ model, maxW = 560 }) {
   if (!model) return null;
@@ -49,6 +50,25 @@ export default function Plan2D({ model, maxW = 560 }) {
           <rect x={r.x} y={r.y} width={r.w} height={r.h} fill="#c98b5a" fillOpacity="0.7" stroke="#e0a96d" strokeWidth="0.75" />
           <text x={r.x + r.w / 2} y={r.y + r.h / 2} fill="#1a1208" fontSize="6.5" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>ST</text>
         </g>
+      ); })}
+      {model.facade && (() => {
+        const fx = (xf) => pad + (xf - b.minX) * scale, fy = (yf) => pad + (yf - b.minY) * scale;
+        const t = 3; // mullion tick length
+        return (
+          <g>
+            {model.facade.mullionsX.map((x, i) => (<g key={"mx" + i}>
+              <line x1={fx(x)} y1={fy(0)} x2={fx(x)} y2={fy(0) + t} stroke="#6b7689" strokeWidth="0.6" />
+              <line x1={fx(x)} y1={fy(model.facade.H)} x2={fx(x)} y2={fy(model.facade.H) - t} stroke="#6b7689" strokeWidth="0.6" />
+            </g>))}
+            {model.facade.mullionsY.map((y, i) => (<g key={"my" + i}>
+              <line x1={fx(0)} y1={fy(y)} x2={fx(0) + t} y2={fy(y)} stroke="#6b7689" strokeWidth="0.6" />
+              <line x1={fx(model.facade.W)} y1={fy(y)} x2={fx(model.facade.W) - t} y2={fy(y)} stroke="#6b7689" strokeWidth="0.6" />
+            </g>))}
+          </g>
+        );
+      })()}
+      {(model.columns || []).map((c, i) => { const x = pad + (c.xFt - b.minX) * scale, y = pad + (c.yFt - b.minY) * scale, s = Math.max(2, c.sizeFt * scale); return (
+        <rect key={"col" + i} x={x - s / 2} y={y - s / 2} width={s} height={s} fill="#8aa0b8" fillOpacity="0.8" />
       ); })}
     </svg>
   );
