@@ -27,7 +27,7 @@ export const PROGRAM_PROFILES = {
     elevPopDensity: 300,
     carCapacityLb: 4000,
     elevHCtarget: 0.12, elevIntervalTargetS: 30,
-    shaftPctBase: 0.09, shaftPctPerStory: 0.0025,  // once-through exhaust, big stacking shafts
+    shaftPctBase: 0.08, shaftPctPerStory: 0.0010,  // once-through exhaust, big stacking shafts
     hvac: "once-through", freightOverStories: 1,    // labs essentially always want freight
     confidence: "solid",
   },
@@ -49,7 +49,7 @@ export const PROGRAM_PROFILES = {
     elevPopDensity: 500,
     carCapacityLb: 3000,
     elevHCtarget: 0.10, elevIntervalTargetS: 40,   // + heavy service traffic
-    shaftPctBase: 0.06, shaftPctPerStory: 0.0012,
+    shaftPctBase: 0.06, shaftPctPerStory: 0.0008,
     hvac: "per-room", freightOverStories: 1,
     confidence: "directional",
   },
@@ -60,7 +60,7 @@ export const PROGRAM_PROFILES = {
     elevPopDensity: 240,
     carCapacityLb: 5000,                            // gurney/bed cars
     elevHCtarget: 0.12, elevIntervalTargetS: 35,
-    shaftPctBase: 0.10, shaftPctPerStory: 0.0025,   // high OA + interstitial
+    shaftPctBase: 0.09, shaftPctPerStory: 0.0010,   // high OA + interstitial
     hvac: "high-OA", freightOverStories: 1,
     confidence: "directional",
   },
