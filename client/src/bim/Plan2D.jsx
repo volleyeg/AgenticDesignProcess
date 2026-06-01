@@ -5,7 +5,7 @@ import React from "react";
 const KIND = { work: "var(--cyan)", meet: "var(--amber)", social: "var(--green)", support: "var(--slate-z)",
   elevator: "#7c8aa0", lobby: "#5a6b82", restroom: "#4a8fb0", shaft: "#6a5f7a", lactation: "#7aa06a" };
 
-export default function Plan2D({ model, maxW = 560 }) {
+export default function Plan2D({ model, maxW = 560, labels = true }) {
   if (!model) return null;
   const b = model.bounds();
   const pad = 8;
@@ -14,6 +14,7 @@ export default function Plan2D({ model, maxW = 560 }) {
   const H = b.hFt * scale + pad * 2;
   const X = (xf) => pad + (xf - b.minX) * scale;
   const Y = (yf) => pad + (yf - b.minY) * scale;
+  const solid = !labels; // shell mode: read components as solid color blocks, key them in the legend
 
   const rect = (fp) => {
     const xs = fp.map((p) => p[0]), ys = fp.map((p) => p[1]);
@@ -30,7 +31,7 @@ export default function Plan2D({ model, maxW = 560 }) {
       {(model.cores || []).map((c, i) => { const r = rect(c.footprintFt); return (
         <rect key={"c" + i} x={r.x} y={r.y} width={r.w} height={r.h} fill="#586173" fillOpacity="0.5" stroke="#8aa0b8" strokeWidth="1" />
       ); })}
-      {(model.cores || []).map((c, i) => { const r = rect(c.footprintFt); return (
+      {!solid && (model.cores || []).map((c, i) => { const r = rect(c.footprintFt); return (
         <text key={"ct" + i} x={r.x + r.w / 2} y={r.y + r.h / 2} fill="var(--ink)" fontSize="9" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>CORE</text>
       ); })}
       {(model.spaces || []).map((s, i) => {
@@ -38,10 +39,10 @@ export default function Plan2D({ model, maxW = 560 }) {
         const small = r.w < 34 || r.h < 22;
         return (
           <g key={i}>
-            <rect x={r.x + 1} y={r.y + 1} width={r.w - 2} height={r.h - 2} fill={col} fillOpacity="0.16" stroke={col} strokeWidth="1.25" rx="2" />
-            {s.daylight && <circle cx={r.x + 7} cy={r.y + 7} r="2.2" fill="var(--amber)" />}
-            {!small && <text x={r.x + r.w / 2} y={r.y + r.h / 2 - 3} fill="var(--ink)" fontSize="9" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>{s.name}</text>}
-            {!small && <text x={r.x + r.w / 2} y={r.y + r.h / 2 + 8} fill="var(--muted)" fontSize="7" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>{s.areaFt2} sf</text>}
+            <rect x={r.x + 0.5} y={r.y + 0.5} width={Math.max(r.w - 1, 0)} height={Math.max(r.h - 1, 0)} fill={col} fillOpacity={solid ? 0.7 : 0.16} stroke={col} strokeWidth={solid ? 0.6 : 1.25} rx={solid ? 0 : 2} />
+            {!solid && s.daylight && <circle cx={r.x + 7} cy={r.y + 7} r="2.2" fill="var(--amber)" />}
+            {!solid && !small && <text x={r.x + r.w / 2} y={r.y + r.h / 2 - 3} fill="var(--ink)" fontSize="9" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>{s.name}</text>}
+            {!solid && !small && <text x={r.x + r.w / 2} y={r.y + r.h / 2 + 8} fill="var(--muted)" fontSize="7" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>{s.areaFt2} sf</text>}
           </g>
         );
       })}

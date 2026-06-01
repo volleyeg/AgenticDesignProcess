@@ -288,7 +288,37 @@ export default function App() {
           {shell && shellModel && (
             <>
               <div style={{ padding: 6, background: "var(--panel)", borderRadius: 6 }}>
-                {shellView === "2d" ? <Plan2D model={shellModel} /> : <Viewer3D model={shellModel} />}
+                {shellView === "2d" ? <Plan2D model={shellModel} labels={false} /> : <Viewer3D model={shellModel} />}
+              </div>
+              <div className="row" style={{ flexWrap: "wrap", gap: "6px 14px", marginTop: 10 }}>
+                {(() => {
+                  const COL = { elevator: "#7c8aa0", lobby: "#5a6b82", restroom: "#4a8fb0", shaft: "#6a5f7a", lactation: "#7aa06a" };
+                  const NAME = { elevator: "Elevator bank", lobby: "Lift lobby", restroom: "Washrooms (M/W)", shaft: "MEP / risers / IDF", lactation: "Lactation" };
+                  const groups = {};
+                  for (const c of shell.core.components) {
+                    const a = c.rect.w * c.rect.h;
+                    groups[c.type] = groups[c.type] || { n: 0, area: 0 };
+                    groups[c.type].n++; groups[c.type].area += a;
+                  }
+                  const items = Object.keys(NAME).filter((k) => groups[k]).map((k) => (
+                    <span key={k} className="row gap6" style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--muted)" }}>
+                      <span style={{ width: 11, height: 11, background: COL[k], borderRadius: 2, display: "inline-block" }} />
+                      {NAME[k]} <span style={{ color: "#5a6470" }}>· {Math.round(groups[k].area).toLocaleString()} sf</span>
+                    </span>
+                  ));
+                  items.push(
+                    <span key="st" className="row gap6" style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--muted)" }}>
+                      <span style={{ width: 11, height: 11, background: "#c98b5a", borderRadius: 2, display: "inline-block" }} /> Egress stairs · {shell.core.stairs.length}
+                    </span>,
+                    <span key="col" className="row gap6" style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--muted)" }}>
+                      <span style={{ width: 11, height: 11, background: "#8aa0b8", borderRadius: 2, display: "inline-block" }} /> Columns · {shell.grid.bayFt}ft bay
+                    </span>,
+                    <span key="cw" className="row gap6" style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--muted)" }}>
+                      <span style={{ width: 11, height: 11, border: "1px solid #6b7689", borderRadius: 2, display: "inline-block" }} /> Curtain wall · {shell.facade.moduleFt}ft module
+                    </span>
+                  );
+                  return items;
+                })()}
               </div>
               <div className="row" style={{ flexWrap: "wrap", gap: 14, marginTop: 10, fontFamily: "var(--mono)", fontSize: 10 }}>
                 <span style={{ color: "var(--ink)" }}>{shell.W}×{shell.H} ft{shell.highRise ? " · high-rise" : ""}</span>
