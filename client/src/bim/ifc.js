@@ -73,8 +73,14 @@ export function writeIFC(model) {
     spaceRefsByLevel[lvl.id] = { storey, storeyLP, spaces: [] };
   }
 
-  // ---- spaces with extruded geometry + properties ----
-  for (const sp of model.spaces) {
+  // ---- all spatial cells (rooms + core + corridors + stairs) as IfcSpace with geometry + properties ----
+  const cells = [
+    ...model.spaces.map((s) => ({ ...s, _kind: s.kind })),
+    ...model.cores.map((c) => ({ ...c, name: "Service Core", _kind: "core", daylight: false, seats: 0 })),
+    ...model.corridors.map((c) => ({ ...c, name: "Corridor", _kind: "corridor", daylight: false, seats: 0 })),
+    ...model.stairs.map((s) => ({ ...s, name: "Egress Stair", _kind: "stair", daylight: false, seats: 0 })),
+  ];
+  for (const sp of cells) {
     const lvl = spaceRefsByLevel[sp.levelId] || spaceRefsByLevel[model.levels[0].id];
     const ptRefs = sp.footprintFt.map((p) => add(`IFCCARTESIANPOINT((${num(p[0])},${num(p[1])}))`));
     const poly = add(`IFCPOLYLINE((${ptRefs.join(",")},${ptRefs[0]}))`);
@@ -86,14 +92,12 @@ export function writeIFC(model) {
     const space = add(`IFCSPACE('${ifcGuid()}',${owner},'${esc(sp.name)}',$,$,${spaceLP},${pds},$,.ELEMENT.,.INTERNAL.,$)`);
     lvl.spaces.push(space);
 
-    // property set
-    const pKind = add(`IFCPROPERTYSINGLEVALUE('Kind',$,IFCLABEL('${esc(sp.kind)}'),$)`);
+    const pKind = add(`IFCPROPERTYSINGLEVALUE('Kind',$,IFCLABEL('${esc(sp._kind)}'),$)`);
     const pDay = add(`IFCPROPERTYSINGLEVALUE('Daylight',$,IFCBOOLEAN(.${sp.daylight ? "T" : "F"}.),$)`);
     const pSeats = add(`IFCPROPERTYSINGLEVALUE('Seats',$,IFCINTEGER(${Math.round(sp.seats || 0)}),$)`);
     const pset = add(`IFCPROPERTYSET('${ifcGuid()}',${owner},'Pset_ForgeSpace',$,(${pKind},${pDay},${pSeats}))`);
     add(`IFCRELDEFINESBYPROPERTIES('${ifcGuid()}',${owner},$,$,(${space}),${pset})`);
 
-    // base quantity (area in ft2)
     const qArea = add(`IFCQUANTITYAREA('GrossFloorArea',$,$,${num(sp.areaFt2)},$)`);
     const eq = add(`IFCELEMENTQUANTITY('${ifcGuid()}',${owner},'Qto_SpaceBaseQuantities',$,$,(${qArea}))`);
     add(`IFCRELDEFINESBYPROPERTIES('${ifcGuid()}',${owner},$,$,(${space}),${eq})`);

@@ -37,6 +37,8 @@ export class BimModel {
     this.cores = [];
     this.columns = [];
     this.doors = [];
+    this.corridors = [];
+    this.stairs = [];
     this.adjacencies = []; // {aId, bId, weight}
   }
 
@@ -63,6 +65,18 @@ export class BimModel {
     return core;
   }
 
+  addCorridor({ levelId, footprintFt, heightFt = 9, loading = null }) {
+    const c = { id: nextId(), type: "Corridor", levelId, footprintFt, heightFt, loading, areaFt2: Math.round(polygonAreaFt2(footprintFt)) };
+    this.corridors.push(c);
+    return c;
+  }
+
+  addStair({ levelId, footprintFt, heightFt = 13 }) {
+    const s = { id: nextId(), type: "Stair", levelId, footprintFt, heightFt, areaFt2: Math.round(polygonAreaFt2(footprintFt)) };
+    this.stairs.push(s);
+    return s;
+  }
+
   addColumn({ levelId, xFt, yFt, sizeFt = 1.5 }) {
     const col = { id: nextId(), type: "Column", levelId, xFt, yFt, sizeFt };
     this.columns.push(col);
@@ -86,8 +100,8 @@ export class BimModel {
   }
 
   bounds() {
-    // overall floor extent in feet from spaces + cores
-    const pts = [...this.spaces, ...this.cores].flatMap((e) => e.footprintFt);
+    // overall floor extent in feet
+    const pts = [...this.spaces, ...this.cores, ...this.corridors].flatMap((e) => e.footprintFt);
     if (!pts.length) return { minX: 0, minY: 0, maxX: 0, maxY: 0, wFt: 0, hFt: 0 };
     const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
     const minX = Math.min(...xs), minY = Math.min(...ys), maxX = Math.max(...xs), maxY = Math.max(...ys);
@@ -97,12 +111,15 @@ export class BimModel {
   totals() {
     const areaFt2 = this.spaces.reduce((s, x) => s + x.areaFt2, 0);
     const seats = this.spaces.reduce((s, x) => s + (x.seats || 0), 0);
+    const corridorFt2 = this.corridors.reduce((s, x) => s + x.areaFt2, 0);
     return {
       levels: this.levels.length,
       spaces: this.spaces.length,
       cores: this.cores.length,
-      columns: this.columns.length,
+      corridors: this.corridors.length,
+      stairs: this.stairs.length,
       areaFt2,
+      corridorFt2,
       seats,
     };
   }

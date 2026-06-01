@@ -61,8 +61,10 @@ export default function Viewer3D({ model, height = 340 }) {
       group.add(mesh, edges);
     };
 
-    (model.spaces || []).forEach((s) => extrude(s.footprintFt, s.heightFt || 9, KIND_HEX[s.kind] || KIND_HEX.support, 0.5));
+    (model.corridors || []).forEach((c) => extrude(c.footprintFt, 0.4, 0x3a4250, 0.85)); // thin floor slabs
+    (model.spaces || []).forEach((s) => extrude(s.footprintFt, s.heightFt || 9, KIND_HEX[s.kind] || KIND_HEX.support, 0.45));
     (model.cores || []).forEach((c) => extrude(c.footprintFt, c.heightFt || 13, KIND_HEX.core, 0.9));
+    (model.stairs || []).forEach((s) => extrude(s.footprintFt, 12, 0xc98b5a, 0.95));
     (model.columns || []).forEach((c) => {
       const g = new THREE.BoxGeometry(c.sizeFt, 11, c.sizeFt);
       const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x586173 }));

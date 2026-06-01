@@ -23,20 +23,33 @@ export default function Plan2D({ model, maxW = 560 }) {
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", maxHeight: 340 }}>
       <rect x={pad} y={pad} width={b.wFt * scale} height={b.hFt * scale} fill="none" stroke="var(--cyan)" strokeWidth="1.5" opacity="0.5" />
+      {(model.corridors || []).map((c, i) => { const r = rect(c.footprintFt); return (
+        <rect key={"k" + i} x={r.x} y={r.y} width={r.w} height={r.h} fill="#3a4250" fillOpacity="0.55" stroke="#4a5563" strokeWidth="0.5" />
+      ); })}
       {(model.cores || []).map((c, i) => { const r = rect(c.footprintFt); return (
-        <rect key={"c" + i} x={r.x} y={r.y} width={r.w} height={r.h} fill="#586173" fillOpacity="0.45" stroke="#8aa0b8" strokeWidth="1" />
+        <rect key={"c" + i} x={r.x} y={r.y} width={r.w} height={r.h} fill="#586173" fillOpacity="0.5" stroke="#8aa0b8" strokeWidth="1" />
+      ); })}
+      {(model.cores || []).map((c, i) => { const r = rect(c.footprintFt); return (
+        <text key={"ct" + i} x={r.x + r.w / 2} y={r.y + r.h / 2} fill="var(--ink)" fontSize="9" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>CORE</text>
       ); })}
       {(model.spaces || []).map((s, i) => {
         const r = rect(s.footprintFt); const col = KIND[s.kind] || KIND.support;
+        const small = r.w < 34 || r.h < 22;
         return (
           <g key={i}>
             <rect x={r.x + 1} y={r.y + 1} width={r.w - 2} height={r.h - 2} fill={col} fillOpacity="0.16" stroke={col} strokeWidth="1.25" rx="2" />
-            {s.daylight && <circle cx={r.x + 8} cy={r.y + 8} r="2.5" fill="var(--amber)" />}
-            <text x={r.x + r.w / 2} y={r.y + r.h / 2 - 3} fill="var(--ink)" fontSize="10" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>{s.name}</text>
-            <text x={r.x + r.w / 2} y={r.y + r.h / 2 + 9} fill="var(--muted)" fontSize="8" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>{s.areaFt2} sf</text>
+            {s.daylight && <circle cx={r.x + 7} cy={r.y + 7} r="2.2" fill="var(--amber)" />}
+            {!small && <text x={r.x + r.w / 2} y={r.y + r.h / 2 - 3} fill="var(--ink)" fontSize="9" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>{s.name}</text>}
+            {!small && <text x={r.x + r.w / 2} y={r.y + r.h / 2 + 8} fill="var(--muted)" fontSize="7" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>{s.areaFt2} sf</text>}
           </g>
         );
       })}
+      {(model.stairs || []).map((s, i) => { const r = rect(s.footprintFt); return (
+        <g key={"s" + i}>
+          <rect x={r.x} y={r.y} width={r.w} height={r.h} fill="#c98b5a" fillOpacity="0.7" stroke="#e0a96d" strokeWidth="0.75" />
+          <text x={r.x + r.w / 2} y={r.y + r.h / 2} fill="#1a1208" fontSize="6.5" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>ST</text>
+        </g>
+      ); })}
     </svg>
   );
 }

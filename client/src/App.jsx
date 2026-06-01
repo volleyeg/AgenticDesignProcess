@@ -19,26 +19,27 @@ const loadLessons = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)
 const saveLessons = (l) => { try { localStorage.setItem(LS_KEY, JSON.stringify(l)); } catch {} };
 
 function FloorPlan({ option, c, highlight }) {
-  const fw = (option.floor && option.floor.w) || c.floorplate.w;
-  const fh = (option.floor && option.floor.h) || c.floorplate.h;
-  const px = Math.min(GRID, 360 / Math.max(fw, 1));
-  const W = fw * px, H = fh * px;
+  const p = option.plan;
+  if (!p) return null;
+  const pad = 2;
+  const px = Math.min(6, 360 / Math.max(p.W, 1));
+  const W = p.W * px + pad * 2, H = p.H * px + pad * 2;
+  const R = (z) => ({ x: pad + z.x * px, y: pad + z.y * px, w: z.w * px, h: z.h * px });
   return (
-    <svg viewBox={`-2 -2 ${W + 4} ${H + 4}`} className="plan" style={{ maxHeight: 260, width: "100%", height: "auto", display: "block" }}>
-      {Array.from({ length: fw + 1 }).map((_, i) => <line key={"v" + i} x1={i * px} y1={0} x2={i * px} y2={H} stroke="var(--line)" strokeWidth="0.5" />)}
-      {Array.from({ length: fh + 1 }).map((_, i) => <line key={"h" + i} x1={0} y1={i * px} x2={W} y2={i * px} stroke="var(--line)" strokeWidth="0.5" />)}
-      <rect x={0} y={0} width={W} height={H} fill="none" stroke="var(--cyan)" strokeWidth="1.5" opacity="0.5" />
-      {(option.zones || []).map((z, i) => {
-        const col = KIND_COLORS[z.kind] || KIND_COLORS.default;
-        const isCore = z.kind === "core";
+    <svg viewBox={`0 0 ${W} ${H}`} className="plan" style={{ maxHeight: 260, width: "100%", height: "auto", display: "block", opacity: highlight ? 1 : 0.95 }}>
+      <rect x={pad} y={pad} width={p.W * px} height={p.H * px} fill="none" stroke="var(--cyan)" strokeWidth="1.2" opacity="0.5" />
+      {p.corridors.map((z, i) => { const r = R(z); return <rect key={"k" + i} x={r.x} y={r.y} width={r.w} height={r.h} fill="#3a4250" fillOpacity="0.55" stroke="none" />; })}
+      {[p.core].map((z, i) => { const r = R(z); return <rect key={"c" + i} x={r.x} y={r.y} width={r.w} height={r.h} fill="#586173" fillOpacity="0.5" stroke="#8aa0b8" strokeWidth="0.8" />; })}
+      {p.rooms.map((z, i) => {
+        const r = R(z); const col = KIND_COLORS[z.kind] || KIND_COLORS.default;
         return (
-          <g key={i} style={{ opacity: highlight ? 1 : 0.95 }}>
-            <rect x={z.x * px + 1} y={z.y * px + 1} width={z.w * px - 2} height={z.h * px - 2} fill={col} fillOpacity={isCore ? 0.4 : 0.16} stroke={col} strokeWidth="1.1" rx="2" />
-            {z.daylight && <Sun x={z.x * px + 4} y={z.y * px + 4} width={9} height={9} color="var(--amber)" />}
-            {z.w * px > 26 && <text x={z.x * px + (z.w * px) / 2} y={z.y * px + (z.h * px) / 2} fill="var(--ink)" fontSize="8" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>{z.label}</text>}
+          <g key={i}>
+            <rect x={r.x + 0.5} y={r.y + 0.5} width={Math.max(r.w - 1, 0)} height={Math.max(r.h - 1, 0)} fill={col} fillOpacity="0.16" stroke={col} strokeWidth="0.9" />
+            {z.daylight && <circle cx={r.x + 3} cy={r.y + 3} r="1.5" fill="var(--amber)" />}
           </g>
         );
       })}
+      {p.stairs.map((z, i) => { const r = R(z); return <rect key={"s" + i} x={r.x} y={r.y} width={r.w} height={r.h} fill="#c98b5a" fillOpacity="0.75" stroke="none" />; })}
     </svg>
   );
 }
@@ -141,8 +142,9 @@ export default function App() {
       setStatus((x) => ({ ...x, generation: "done", evaluation: "running" }));
       log("Generation", "3 schemes placed by solver + metrics computed");
 
-      // 4. EVALUATION
-      const er = await api("/api/evaluate", { options: opts });
+      // 4. EVALUATION (send only light fields, not the full plan geometry)
+      const lightOpts = opts.map((o) => ({ name: o.name, rationale: o.rationale, metrics: o.metrics }));
+      const er = await api("/api/evaluate", { options: lightOpts });
       const ev = er.data; if (er.mode === "local") anyLocal = true;
       const em = {}; (ev.evaluations || []).forEach((e) => (em[e.name] = e));
       opts = opts.map((o) => { const e = em[o.name] || { qualScore: 70, critique: "—" }; return { ...o, qualScore: e.qualScore, critique: e.critique, total: Math.round(0.45 * e.qualScore + 0.55 * o.metrics.computedScore) }; });
@@ -281,9 +283,13 @@ export default function App() {
                     <Bar label="design Q" value={sel.qualScore} color="var(--amber)" />
                     <Bar label="utilization" value={sel.metrics.utilization} color="var(--cyan)" />
                     <Bar label="daylight" value={sel.metrics.daylightPct} color="var(--green)" />
-                    <Bar label="adjacency" value={sel.metrics.adjacencyPct} color="var(--cyan)" />
+                    <Bar label="circulation" value={sel.metrics.circulationPct} color="var(--slate-z)" />
+                    <div className="row" style={{ justifyContent: "space-between", paddingTop: 2 }}>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)" }}>corridor type</span>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--cyan)" }}>{sel.metrics.classification} · {sel.plan ? `${sel.plan.W}×${sel.plan.H} ft` : ""}</span>
+                    </div>
                     <div className="row" style={{ justifyContent: "space-between", paddingTop: 4, borderTop: "1px solid var(--line)" }}>
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)" }}>overlaps {sel.metrics.overlaps} · computed {sel.metrics.computedScore} + design {sel.qualScore}</span>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)" }}>computed {sel.metrics.computedScore} + design {sel.qualScore}</span>
                       <span style={{ fontFamily: "var(--mono)", fontSize: 14, color: "var(--green)" }}>→ {sel.total}</span>
                     </div>
                   </div>
@@ -307,7 +313,7 @@ export default function App() {
               {viewMode === "2d" ? <Plan2D model={bimModel} /> : <Viewer3D model={bimModel} />}
               <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
                 <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--muted)" }}>
-                  {bimModel.totals().levels} level · {bimModel.totals().spaces} spaces · {bimModel.totals().areaFt2.toLocaleString()} sf · seats {bimModel.totals().seats} · units: feet
+                  {bimModel.totals().levels} level · {bimModel.totals().spaces} rooms · {bimModel.totals().corridors} corridors · {bimModel.totals().stairs} stairs · {bimModel.totals().areaFt2.toLocaleString()} sf · seats {bimModel.totals().seats}
                 </span>
                 <button onClick={downloadIFC} className="run" style={{ background: "var(--green)", color: "#05291a", padding: "6px 12px" }}>
                   <Boxes size={13} /> EXPORT IFC
