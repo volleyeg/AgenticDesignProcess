@@ -14,6 +14,10 @@ export function buildBimModel(constraints, option) {
   const idMap = {}; // solver zone id -> bim space id
   for (const z of option.zones || []) {
     const fp = rectFt(z.x * MODULE_FT, z.y * MODULE_FT, z.w * MODULE_FT, z.h * MODULE_FT);
+    if (z.kind === "core") {
+      m.addCore({ levelId: level.id, footprintFt: fp, heightFt: 13 });
+      continue;
+    }
     const areaFt2 = z.w * MODULE_FT * (z.h * MODULE_FT);
     const seats = Math.round((SEAT_PER_FT2[z.kind] || 0) * areaFt2);
     const sp = m.addSpace({

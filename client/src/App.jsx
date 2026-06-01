@@ -19,19 +19,23 @@ const loadLessons = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)
 const saveLessons = (l) => { try { localStorage.setItem(LS_KEY, JSON.stringify(l)); } catch {} };
 
 function FloorPlan({ option, c, highlight }) {
-  const fw = c.floorplate.w, fh = c.floorplate.h, W = fw * GRID, H = fh * GRID;
+  const fw = (option.floor && option.floor.w) || c.floorplate.w;
+  const fh = (option.floor && option.floor.h) || c.floorplate.h;
+  const px = Math.min(GRID, 360 / Math.max(fw, 1));
+  const W = fw * px, H = fh * px;
   return (
     <svg viewBox={`-2 -2 ${W + 4} ${H + 4}`} className="plan" style={{ maxHeight: 260, width: "100%", height: "auto", display: "block" }}>
-      {Array.from({ length: fw + 1 }).map((_, i) => <line key={"v" + i} x1={i * GRID} y1={0} x2={i * GRID} y2={H} stroke="var(--line)" strokeWidth="0.5" />)}
-      {Array.from({ length: fh + 1 }).map((_, i) => <line key={"h" + i} x1={0} y1={i * GRID} x2={W} y2={i * GRID} stroke="var(--line)" strokeWidth="0.5" />)}
+      {Array.from({ length: fw + 1 }).map((_, i) => <line key={"v" + i} x1={i * px} y1={0} x2={i * px} y2={H} stroke="var(--line)" strokeWidth="0.5" />)}
+      {Array.from({ length: fh + 1 }).map((_, i) => <line key={"h" + i} x1={0} y1={i * px} x2={W} y2={i * px} stroke="var(--line)" strokeWidth="0.5" />)}
       <rect x={0} y={0} width={W} height={H} fill="none" stroke="var(--cyan)" strokeWidth="1.5" opacity="0.5" />
       {(option.zones || []).map((z, i) => {
         const col = KIND_COLORS[z.kind] || KIND_COLORS.default;
+        const isCore = z.kind === "core";
         return (
           <g key={i} style={{ opacity: highlight ? 1 : 0.95 }}>
-            <rect x={z.x * GRID + 1.5} y={z.y * GRID + 1.5} width={z.w * GRID - 3} height={z.h * GRID - 3} fill={col} fillOpacity="0.16" stroke={col} strokeWidth="1.25" rx="3" />
-            {z.daylight && <Sun x={z.x * GRID + 5} y={z.y * GRID + 5} width={11} height={11} color="var(--amber)" />}
-            <text x={z.x * GRID + (z.w * GRID) / 2} y={z.y * GRID + (z.h * GRID) / 2} fill="var(--ink)" fontSize="10" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>{z.label}</text>
+            <rect x={z.x * px + 1} y={z.y * px + 1} width={z.w * px - 2} height={z.h * px - 2} fill={col} fillOpacity={isCore ? 0.4 : 0.16} stroke={col} strokeWidth="1.1" rx="2" />
+            {z.daylight && <Sun x={z.x * px + 4} y={z.y * px + 4} width={9} height={9} color="var(--amber)" />}
+            {z.w * px > 26 && <text x={z.x * px + (z.w * px) / 2} y={z.y * px + (z.h * px) / 2} fill="var(--ink)" fontSize="8" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "var(--mono)" }}>{z.label}</text>}
           </g>
         );
       })}
