@@ -108,7 +108,7 @@ export default function App() {
   const [mode, setMode] = useState(null);
   const [diag, setDiag] = useState("");
   const [viewMode, setViewMode] = useState("2d");
-  const [shellInputs, setShellInputs] = useState({ areaFt2: 25000, aspect: 1.6, coreType: "central", corePosition: "center", stories: 12 });
+  const [shellInputs, setShellInputs] = useState({ areaFt2: 25000, aspect: 1.6, coreType: "central", corePosition: "center", stories: 12, program: "office" });
   const [shellView, setShellView] = useState("2d");
 
   useEffect(() => { setRunCount(parseInt(localStorage.getItem("forge:runs") || "0")); }, []);
@@ -268,9 +268,14 @@ export default function App() {
             <label className="sfield">stories
               <input type="number" step="1" min="1" max="80" value={shellInputs.stories} onChange={(e) => setShellInputs((s) => ({ ...s, stories: Math.max(1, +e.target.value || 1) }))} className="sinp" />
             </label>
+            <label className="sfield">program
+              <select value={shellInputs.program} onChange={(e) => setShellInputs((s) => ({ ...s, program: e.target.value }))} className="sinp">
+                <option value="office">office</option><option value="lab">lab</option><option value="residential">residential</option><option value="hotel">hotel</option><option value="healthcare">healthcare</option>
+              </select>
+            </label>
             <label className="sfield">core type
               <select value={shellInputs.coreType} onChange={(e) => setShellInputs((s) => ({ ...s, coreType: e.target.value }))} className="sinp">
-                <option value="central">central</option><option value="side">side</option><option value="end">end</option>
+                <option value="central">central</option><option value="side">side</option><option value="end">end</option><option value="double">double</option>
               </select>
             </label>
             <label className="sfield">core position
@@ -290,9 +295,10 @@ export default function App() {
                 <span style={{ color: "var(--muted)" }}>core <b style={{ color: "var(--cyan)" }}>{shell.core.areaPct}%</b></span>
                 <span style={{ color: "var(--muted)" }}>efficiency <b style={{ color: "var(--green)" }}>{shell.efficiency}%</b></span>
                 <span style={{ color: "var(--muted)" }}>occ/floor {shell.occupantLoad}</span>
-                <span style={{ color: "var(--muted)" }}>elevators <b style={{ color: "var(--ink)" }}>{shell.core.components.elevators.passenger}</b>+{shell.core.components.elevators.freight}f+{shell.core.components.elevators.fireSvc}fs</span>
+                <span style={{ color: "var(--muted)" }}>elevators <b style={{ color: "var(--ink)" }}>{shell.elevators.passengerCars}</b> pax in {shell.elevators.numZones}z{shell.elevators.skyLobby ? " +sky" : ""} · +{shell.elevators.freight}frt +{shell.elevators.fireService}fs @ {shell.elevators.speedFpm}fpm</span>
                 <span style={{ color: "var(--muted)" }}>stairs {shell.egress.stairsRequired} · sep {shell.egress.separationActualFt}/{shell.egress.separationRequiredFt}ft {shell.egress.ok ? "✓" : "✗"}</span>
-                <span style={{ color: "var(--muted)" }}>WC {shell.core.components.restrooms.wcPerSex}/sex</span>
+                <span style={{ color: "var(--muted)" }}>WC {shell.restrooms.wcPerSex}/sex · lav {shell.restrooms.lavPerSex}/sex</span>
+                <span style={{ color: shell.feasible ? "var(--green)" : "var(--amber)" }}>grammar {shell.feasible ? "valid ✓" : "check ⚠"}</span>
               </div>
               {shell.flags.length > 0 && (
                 <div style={{ marginTop: 8, fontFamily: "var(--mono)", fontSize: 9, color: "var(--amber)" }}>

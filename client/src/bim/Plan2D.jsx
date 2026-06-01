@@ -3,7 +3,7 @@
 import React from "react";
 
 const KIND = { work: "var(--cyan)", meet: "var(--amber)", social: "var(--green)", support: "var(--slate-z)",
-  elevator: "#7c8aa0", lobby: "#5a6b82", restroom: "#4a8fb0", shaft: "#6a5f7a" };
+  elevator: "#7c8aa0", lobby: "#5a6b82", restroom: "#4a8fb0", shaft: "#6a5f7a", lactation: "#7aa06a" };
 
 export default function Plan2D({ model, maxW = 560 }) {
   if (!model) return null;

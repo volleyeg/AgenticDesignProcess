@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 const KIND_HEX = { work: 0x56d4cf, meet: 0xe6a94e, social: 0x74e0a3, support: 0x8aa0b8, core: 0x586173,
-  elevator: 0x7c8aa0, lobby: 0x5a6b82, restroom: 0x4a8fb0, shaft: 0x6a5f7a };
+  elevator: 0x7c8aa0, lobby: 0x5a6b82, restroom: 0x4a8fb0, shaft: 0x6a5f7a, lactation: 0x7aa06a };
 
 export default function Viewer3D({ model, height = 340 }) {
   const mountRef = useRef(null);
