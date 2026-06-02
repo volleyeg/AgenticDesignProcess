@@ -203,9 +203,11 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
         return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={label} />;
       })}
       {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={corridor ? edgeToward(s.rect, corridor) : null} />)}
-      {/* doors = traffic flow: every entered room connects to the lift-lobby corridor */}
+      {/* washrooms open OUT to the floor (never into the elevator lobby): door on the edge away from the lobby */}
       {corridor && cells.filter((c) => c.type === "restroom" && inView(c.rect)).map((c, i) => {
-        const e = edgeToward(c.rect, corridor); return e ? <Door key={"d" + i} edge={e} r={c.rect} /> : null;
+        const lobbyEdge = edgeToward(c.rect, corridor);
+        const floorEdge = lobbyEdge === "top" ? "bottom" : lobbyEdge === "bottom" ? "top" : lobbyEdge === "left" ? "right" : lobbyEdge === "right" ? "left" : "bottom";
+        return <Door key={"d" + i} edge={floorEdge} r={c.rect} />;
       })}
     </svg>
   );

@@ -54,9 +54,14 @@ export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, s
     const bankW = pax * D.liftPax.w + svc * D.liftService.w;
     const bankD = Math.max(D.liftPax.d, svc ? D.liftService.d : 0);
     cells.push({ key: "liftBank", type: "elevator", name: `${pax} lifts${svc ? ` +${svc} svc` : ""}`, wFt: bankW, dFt: bankD, group: "vt", face: "front", rows: 1, cars: pax, svc });
-    if (T.lobby) cells.push({ key: "lobby", type: "lobby", name: "Lift lobby", wFt: bankW, dFt: D.lobbyDepthFt, group: "vt", face: "active" });
+    // ONE enclosed elevator lobby (in a sprinklered building it is itself the smoke-protected lobby).
+    // High-rise fire-service-access lobby (IBC 3007.6): min 150 sf, no dimension < 8 ft — but still one box.
+    if (T.lobby) {
+      let lobW = bankW, lobD = D.lobbyDepthFt;
+      if (highRise) { lobD = Math.max(lobD, 8); if (lobW * lobD < 150) lobW = Math.max(lobW, Math.ceil(150 / lobD)); }
+      cells.push({ key: "lobby", type: "lobby", name: highRise ? "Elevator lobby (FSAE)" : "Elevator lobby", wFt: lobW, dFt: lobD, group: "vt", face: "active", rated: highRise });
+    }
     if (T.elevatorControl) cells.push({ key: "control", type: "shaft", name: "Lift control", wFt: D.control.w, dFt: D.control.d, group: "vt", face: "blind" });
-    if (highRise && T.smokeLobby) cells.push({ key: "smokeLobby", type: "lobby", name: "Smoke lobby", wFt: D.smokeLobby.w, dFt: D.smokeLobby.d, group: "vt", face: "active" });
   }
 
   // ---- egress ----

@@ -55,9 +55,8 @@ function layoutBands({ bank, lobby, smoke, washrooms, risers, support, stairs, d
 
   let y = 0;
   if (doubleLoaded) {
-    // elevators -> smoke lobby -> LIFT LOBBY (public spine) -> accessed rooms -> blind risers
+    // elevators -> ELEVATOR LOBBY (one box, smoke-protected) -> accessed rooms (open to floor) -> blind risers
     if (bank) { bandRow(bank, y, carD, 0, L); y += carD; }
-    if (smoke) { bandRow(smoke, y, smoke.dFt, 0, L); y += smoke.dFt; }
     const corridorY = y; if (lobby) { bandRow(lobby, y, lobby.dFt, 0, L); y += lobby.dFt; }
     const corridorY1 = y;
     // below the spine: a FRONT row of rooms people enter (washrooms, janitor, lactation) that touch the
@@ -87,7 +86,6 @@ function layoutBands({ bank, lobby, smoke, washrooms, risers, support, stairs, d
   for (const c of washrooms) { const cw = (c.wFt * c.dFt) / frontD; bandRow(c, y, frontD, wx, cw); wx += cw; }
   y += frontD;
   const corridorY = y; if (lobby) { bandRow(lobby, y, lobby.dFt, 0, Lsingle); y += lobby.dFt; }
-  if (smoke) { bandRow(smoke, y, smoke.dFt, 0, Lsingle); y += smoke.dFt; }
   return { placed, L: Lsingle, D: y, corridorY, corridorY1: y };
 }
 
