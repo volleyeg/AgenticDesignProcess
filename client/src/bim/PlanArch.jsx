@@ -19,6 +19,12 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   const stairs = core.stairCells || [];
   const corridor = cells.find((c) => c.key === "lobby")?.rect || cells.find((c) => c.type === "lobby")?.rect || null;
   const vestRect = cells.find((c) => c.key === "svcVest")?.rect || null;
+  const mechCells = cells.filter((c) => c.access === "mech");
+  const mechRect = mechCells.length ? {
+    x: Math.min(...mechCells.map((c) => c.rect.x)), y: Math.min(...mechCells.map((c) => c.rect.y)),
+    w: Math.max(...mechCells.map((c) => c.rect.x + c.rect.w)) - Math.min(...mechCells.map((c) => c.rect.x)),
+    h: Math.max(...mechCells.map((c) => c.rect.y + c.rect.h)) - Math.min(...mechCells.map((c) => c.rect.y)),
+  } : null;
   const _all = [...cells, ...stairs].map((c) => c.rect).filter(Boolean);
   const coreBox = _all.length
     ? { x: Math.min(..._all.map((r) => r.x)), y: Math.min(..._all.map((r) => r.y)), w: 0, h: 0 }
@@ -32,6 +38,15 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     if (Math.abs(r.x - b.x) < 1.2) return "left";
     if (Math.abs((r.x + r.w) - (b.x + b.w)) < 1.2) return "right";
     return "bottom";
+  };
+  // washroom entry: prefer the core-boundary edge along the room's LONG wall (stall bank wants the long run)
+  const wcEntry = (r) => {
+    const b = coreBox;
+    const onTop = Math.abs(r.y - b.y) < 1.2, onBot = Math.abs((r.y + r.h) - (b.y + b.h)) < 1.2;
+    const onLeft = Math.abs(r.x - b.x) < 1.2, onRight = Math.abs((r.x + r.w) - (b.x + b.w)) < 1.2;
+    if (r.h >= r.w) { if (onLeft) return "left"; if (onRight) return "right"; }
+    else { if (onTop) return "top"; if (onBot) return "bottom"; }
+    return perimeterEdge(r);
   };
 
   // view region
@@ -179,45 +194,47 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     return null;
   };
 
-  // washroom: room + fixture symbols (stalls along back wall, lavs along front)
-  // washroom: stalls on the wall opposite the entry, lavs on the entry wall, a clear turning zone at
-  // the entry that the door opens into (ADA 603.2.3 — the entry door swings into clear space, never a fixture).
-  const Washroom = ({ r, men, entry }) => {
+  // washroom: draws EXACTLY the required fixtures — `wc` stalls (one accessible), `lav` lavatories,
+  // `urinals` (men) — with a clear entry/turning zone the door opens into (ADA 603.2.3).
+  const Washroom = ({ r, men, entry, wc = 3, lav = 3, urinals = 0 }) => {
     const px = X(r.x) + wall, py = Y(r.y) + wall, pw = S(r.w) - wall * 2, ph = S(r.h) - wall * 2;
     const e = entry || (ph >= pw ? "left" : "bottom");
     const vertical = e === "left" || e === "right";
-    const F = []; const sd = S(5), run = S(3), acc = S(5), lavP = S(2.4);
-    const clr = Math.min(S(5.5), (vertical ? ph : pw) * 0.34);   // clear entry/turning zone (no fixtures)
+    const F = []; const sd = S(5), stallW = S(3), accW = S(5), lavP = S(2.4), uP = S(2);
+    const length = vertical ? ph : pw;
+    const clr = Math.min(S(6), length * 0.3);                    // clear entry zone (no fixtures)
+    const stallH = (i) => (i === 0 ? accW : stallW);             // first stall is the accessible one
     if (vertical) {
       const stallsRight = e !== "right";
       const sx = stallsRight ? px + pw - sd : px, aisleX = stallsRight ? sx : sx + sd;
       const lavX = stallsRight ? px + 1 : px + pw - 1 - S(1.6);
-      const fy1 = py + ph - clr;                                 // clear zone is the bottom band
-      let yy = py, idx = 0;
-      while (yy + run <= fy1) { const h = idx === 0 ? acc : run; if (yy + h > fy1) break;
-        F.push(<rect key={"s" + idx} x={sx} y={yy + 0.5} width={sd} height={h - 1} fill="none" stroke={INK} strokeWidth="0.5" />);
-        F.push(<rect key={"t" + idx} x={stallsRight ? sx + sd - 4.5 : sx + 1.5} y={yy + h / 2 - 2} width={3} height={4} rx={1.3} fill="none" stroke={INK} strokeWidth="0.45" />);
-        F.push(<line key={"sd" + idx} x1={aisleX} y1={yy + 1} x2={stallsRight ? aisleX - 3.5 : aisleX + 3.5} y2={yy + h * 0.45} stroke={INK} strokeWidth="0.5" />);
-        if (idx === 0) F.push(<circle key="acc" cx={sx + sd / 2} cy={yy + h / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
-        yy += h; idx++; }
-      const lavN = Math.max(1, Math.min(8, Math.floor((fy1 - py) / lavP)));
-      for (let i = 0; i < lavN; i++) F.push(<rect key={"l" + i} x={lavX} y={py + 1 + i * lavP} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />);
-      if (men) for (let i = 0; i < Math.min(2, lavN); i++) F.push(<rect key={"u" + i} x={lavX} y={fy1 - 4 - i * S(1.6)} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />);
+      const fy1 = py + ph - clr;
+      let yy = py;
+      for (let i = 0; i < wc; i++) { const h = stallH(i); if (yy + h > fy1) break;
+        F.push(<rect key={"s" + i} x={sx} y={yy + 0.5} width={sd} height={h - 1} fill="none" stroke={INK} strokeWidth="0.5" />);
+        F.push(<rect key={"t" + i} x={stallsRight ? sx + sd - 4.5 : sx + 1.5} y={yy + h / 2 - 2} width={3} height={4} rx={1.3} fill="none" stroke={INK} strokeWidth="0.45" />);
+        F.push(<line key={"sd" + i} x1={aisleX} y1={yy + 1} x2={stallsRight ? aisleX - 3.5 : aisleX + 3.5} y2={yy + h * 0.45} stroke={INK} strokeWidth="0.5" />);
+        if (i === 0) F.push(<circle key="acc" cx={sx + sd / 2} cy={yy + h / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
+        yy += h; }
+      let ly = py + 1;
+      for (let i = 0; i < lav && ly + 2.6 < fy1; i++) { F.push(<rect key={"l" + i} x={lavX} y={ly} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />); ly += lavP; }
+      for (let i = 0; i < urinals && ly + 3 < fy1; i++) { F.push(<rect key={"u" + i} x={lavX} y={ly} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />); ly += uP; }
       return wcGroup(F, r, men, vertical, e, (ph - clr / 2) / ph);
     }
     const stallsTop = e !== "top";
     const sy = stallsTop ? py : py + ph - sd, aisleY = stallsTop ? sy + sd : sy;
     const lavY = stallsTop ? py + ph - 1 - 2.6 : py + 1;
     const fx1 = px + pw - clr;
-    let xx = px, idx = 0;
-    while (xx + run <= fx1) { const w = idx === 0 ? acc : run; if (xx + w > fx1) break;
-      F.push(<rect key={"s" + idx} x={xx + 0.5} y={sy} width={w - 1} height={sd} fill="none" stroke={INK} strokeWidth="0.5" />);
-      F.push(<rect key={"t" + idx} x={xx + w / 2 - 1.5} y={stallsTop ? sy + sd - 4.5 : sy + 1.5} width={3} height={4} rx={1.3} fill="none" stroke={INK} strokeWidth="0.45" />);
-      F.push(<line key={"sd" + idx} x1={xx + 1} y1={aisleY} x2={xx + w * 0.45} y2={stallsTop ? aisleY + 3.5 : aisleY - 3.5} stroke={INK} strokeWidth="0.5" />);
-      if (idx === 0) F.push(<circle key="acc" cx={xx + w / 2} cy={sy + sd / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
-      xx += w; idx++; }
-    const lavN = Math.max(1, Math.min(9, Math.floor((fx1 - px) / lavP)));
-    for (let i = 0; i < lavN; i++) F.push(<rect key={"l" + i} x={px + 1 + i * lavP} y={lavY} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />);
+    let xx = px;
+    for (let i = 0; i < wc; i++) { const w = stallH(i); if (xx + w > fx1) break;
+      F.push(<rect key={"s" + i} x={xx + 0.5} y={sy} width={w - 1} height={sd} fill="none" stroke={INK} strokeWidth="0.5" />);
+      F.push(<rect key={"t" + i} x={xx + w / 2 - 1.5} y={stallsTop ? sy + sd - 4.5 : sy + 1.5} width={3} height={4} rx={1.3} fill="none" stroke={INK} strokeWidth="0.45" />);
+      F.push(<line key={"sd" + i} x1={xx + 1} y1={aisleY} x2={xx + w * 0.45} y2={stallsTop ? aisleY + 3.5 : aisleY - 3.5} stroke={INK} strokeWidth="0.5" />);
+      if (i === 0) F.push(<circle key="acc" cx={xx + w / 2} cy={sy + sd / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
+      xx += w; }
+    let lxx = px + 1;
+    for (let i = 0; i < lav && lxx + 1.6 < fx1; i++) { F.push(<rect key={"l" + i} x={lxx} y={lavY} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />); lxx += lavP; }
+    for (let i = 0; i < urinals && lxx + 2.3 < fx1; i++) { F.push(<rect key={"u" + i} x={lxx} y={stallsTop ? lavY - 3.4 : lavY + 3} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />); lxx += uP; }
     return wcGroup(F, r, men, vertical, e, (pw - clr / 2) / pw);
   };
   const wcGroup = (F, r, men, vertical, e, doorAt) => {
@@ -272,14 +289,16 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
       {/* core objects */}
       {cells.filter((c) => inView(c.rect)).map((c, i) => {
         if (c.type === "elevator") return <Elevator key={i} r={c.rect} cars={c.cars} svc={c.svc} fs={c.fs} freight={c.freight} />;
-        if (c.type === "restroom") return <Washroom key={i} r={c.rect} men={c.key === "wcM"} entry={perimeterEdge(c.rect)} />;
+        if (c.type === "restroom") return <Washroom key={i} r={c.rect} men={c.key === "wcM"} entry={wcEntry(c.rect)} wc={c.wc} lav={c.lav} urinals={c.urinals} />;
         return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={c.name} />;
       })}
       {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={perimeterEdge(s.rect)} />)}
-      {/* doors by access: vestibule rooms (incl freight) door into the service vestibule; floor rooms to the perimeter */}
+      {/* doors by access: vestibule rooms (incl freight) door into the service corridor; floor rooms to the perimeter */}
       {vestRect && cells.filter((c) => c.access === "vestibule" && inView(c.rect)).map((c, i) => {
         const e = edgeToward(c.rect, vestRect); return e ? <Door key={"dv" + i} edge={e} r={c.rect} /> : null;
       })}
+      {/* mechanical room: the sealed shafts are one cluster reached through a single door to the corridor */}
+      {vestRect && mechRect && <Door edge={edgeToward(mechRect, vestRect) || perimeterEdge(mechRect)} r={mechRect} />}
       {vestRect && <Door edge={perimeterEdge(vestRect)} r={vestRect} w={4} />}
     </svg>
   );

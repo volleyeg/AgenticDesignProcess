@@ -77,8 +77,9 @@ export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, s
   // ---- sanitary ----
   if (T.washrooms) {
     const m = washroomDims(wcPerSex, lavPerSex, true, D), w = washroomDims(wcPerSex, lavPerSex, false, D);
-    cells.push({ key: "wcM", type: "restroom", name: "Men", wFt: m.w, dFt: m.d, group: "sanitary", face: "blind", access: "floor" });
-    cells.push({ key: "wcW", type: "restroom", name: "Women", wFt: w.w, dFt: w.d, group: "sanitary", face: "blind", access: "floor" });
+    const urinals = Math.round(wcPerSex / 2);
+    cells.push({ key: "wcM", type: "restroom", name: "Men", wFt: m.w, dFt: m.d, group: "sanitary", face: "blind", access: "floor", wc: wcPerSex, lav: lavPerSex, urinals });
+    cells.push({ key: "wcW", type: "restroom", name: "Women", wFt: w.w, dFt: w.d, group: "sanitary", face: "blind", access: "floor", wc: wcPerSex, lav: lavPerSex, urinals: 0 });
   }
   // janitor closet — reached from the service vestibule (lactation is TENANT scope, not base building)
   if (T.janitor) cells.push({ key: "janitor", type: "shaft", name: "Janitor / sink", wFt: D.janitor.w, dFt: D.janitor.d, group: "boh", face: "blind", access: "vestibule" });
