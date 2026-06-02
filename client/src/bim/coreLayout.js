@@ -8,6 +8,62 @@ import { CORE_DIMS } from "./coreObjects.js";
 
 const r1 = (n) => Math.round(n * 10) / 10;
 
+// ---- service pods: wrap up to 3 rooms (left / top / right) around one small vestibule that opens
+// 'south' (to the floor). The code DECIDES how many pods by trying each valid count and keeping the
+// arrangement that packs the service zone into the least width (tightest core). No hard-coded layout.
+// Returns { placed:[{...cell,lx,ly,lw,lh}], vests:[{id,lx,ly,lw,lh}], width } packed into height H.
+function packServicePods(rooms, H, vestW0 = 6, vestH0 = 7) {
+  if (!rooms.length) return { placed: [], vests: [], width: 0 };
+  const area = (c) => c.wFt * c.dFt;
+  // build ONE pod (1-3 rooms) at local origin; returns {cells, vest, w} filling height H
+  const buildPod = (grp, id) => {
+    const cells = [], R = grp.slice().sort((a, b) => area(b) - area(a));
+    const top = R.length === 3 ? R[2] : null;          // smallest caps the middle column
+    const left = R[0] || null, right = R.length >= 2 ? R[1] : null;
+    const vestH = top ? Math.min(vestH0, H - 4) : H;    // small vestibule if a top room caps it, else full height
+    const vestW = top ? Math.max(vestW0, area(top) / Math.max(H - vestH, 4)) : vestW0;
+    const leftW = left ? Math.max(area(left) / H, 4) : 0;
+    const rightW = right ? Math.max(area(right) / H, 4) : 0;
+    const w = leftW + vestW + rightW;
+    if (left) cells.push({ ...left, lx: 0, ly: 0, lw: leftW, lh: H, vestId: id });
+    if (top) cells.push({ ...top, lx: leftW, ly: 0, lw: vestW, lh: H - vestH, vestId: id });
+    if (right) cells.push({ ...right, lx: leftW + vestW, ly: 0, lw: rightW, lh: H, vestId: id });
+    const vest = { id, lx: leftW, ly: H - vestH, lw: vestW, lh: vestH };
+    return { cells, vest, w };
+  };
+  // partition rooms into n pods (<=3 each), greedily balancing area into the currently-smallest pod
+  const partition = (n) => {
+    const groups = Array.from({ length: n }, () => []);
+    const load = new Array(n).fill(0);
+    for (const room of rooms.slice().sort((a, b) => area(b) - area(a))) {
+      let best = -1; for (let i = 0; i < n; i++) if (groups[i].length < 3 && (best < 0 || load[i] < load[best])) best = i;
+      if (best < 0) return null;                          // can't fit (n too small)
+      groups[best].push(room); load[best] += area(room);
+    }
+    return groups.filter((g) => g.length);
+  };
+  // try the minimum feasible pod count and one more; keep the tightest (least width)
+  let bestW = Infinity, best = null;
+  const nMin = Math.ceil(rooms.length / 3);
+  for (let n = nMin; n <= nMin + 1; n++) {
+    const groups = partition(n); if (!groups) continue;
+    const pods = groups.map((g, i) => buildPod(g, i));
+    const width = pods.reduce((s, p) => s + p.w, 0);
+    const ar = pods.reduce((s, p) => s + Math.abs(Math.log((p.w || 1) / H)), 0);  // squareness penalty
+    const cost = width + ar * 0.5;
+    if (cost < bestW) { bestW = cost; best = { pods, width }; }
+  }
+  if (!best) { const p = buildPod(rooms.slice(0, 3), 0); best = { pods: [p], width: p.w }; }
+  // lay the pods left-to-right
+  const placed = [], vests = []; let x = 0;
+  for (const p of best.pods) {
+    for (const c of p.cells) placed.push({ ...c, lx: c.lx + x });
+    vests.push({ ...p.vest, lx: p.vest.lx + x });
+    x += p.w;
+  }
+  return { placed, vests, width: best.width };
+}
+
 // ---- squarified treemap (Bruls, Huizing & van Wijk 2000): fill rect with near-square cells ----
 function squarify(items, x, y, w, h) {
   const out = [];
@@ -54,50 +110,42 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
 
   if (doubleLoaded) {
     // THREE-COLUMN central core with real circulation:
-    //   center : elevator lobby (N, to floor) / pax elevators /
-    //            SERVICE ROW [closets + freight + a MECHANICAL ROOM holding the sealed shafts] /
-    //            SERVICE CORRIDOR (S, to floor)
+    //   center : elevator lobby (N) / pax elevators / SERVICE PODS (small vestibules with rooms wrapped
+    //            around them, each vestibule opening S to the floor) — count chosen by the packer search
     //   sides  : stair at a diagonal corner + washroom (to floor) on each opposite face
-    // Every closet and the mech room front the service corridor with a door; the sealed duct/plumbing/
-    // fire/pressurization shafts sit INSIDE the mech room (reached through its one door) — nothing landlocked.
     const bankW = bank ? bank.wFt : 18;
     const lobbyD = lobby ? lobby.dFt : 0;
-    const pressShafts = mep.concat(egressExtra).filter((c) => c.key && c.key.startsWith("press"));
-    const sealed = mep.concat(pressShafts.filter((c) => !mep.includes(c)));        // -> inside mech room
-    const stairExtra = egressExtra.filter((c) => !(c.key && c.key.startsWith("press")));  // vest / refuge
-    const rowRooms = boh.concat(stairExtra);                                       // front the corridor
-    const vestD = vest ? vest.dFt : 6;
-    const Dsvc = Math.max(rowRooms.length ? Math.max(...rowRooms.map((c) => c.dFt)) : 0, 10);
-    const mechW = sealed.length ? Math.max(areaOf(sealed) / Dsvc, 6) : 0;
-    const rowNatW = rowRooms.reduce((s, c) => s + c.wFt, 0) + mechW;
-    const centerW = Math.max(bankW, rowNatW, 18);
+    const pressShafts = egressExtra.filter((c) => c.key && c.key.startsWith("press"));
+    const sealed = mep.concat(pressShafts);                                        // -> inside a mech room
+    // stair vestibule / refuge belong at the stairs (folded into the stair enclosure here), not in service pods
     const sD = stairs.length ? stairs[0].dFt : 0, sW = stairs.length ? stairs[0].wFt : 0;
     const wcM = washrooms.find((c) => c.key === "wcM") || washrooms[0] || null;
     const wcW = washrooms.find((c) => c.key === "wcW") || (washrooms[1] || null);
-    // the washroom's fixture run (its wFt) must fit alongside the stair in the side column, + an entry zone
     const washNeed = Math.max(wcM ? wcM.wFt : 0, wcW ? wcW.wFt : 0) + 8;
-    const centerColH = lobbyD + carD + Dsvc + vestD;
-    const Hc = Math.max(centerColH, sD + washNeed, sD + 10);
-    const vestD2 = vestD + (Hc - centerColH);                    // pad the service corridor to fill the height
+    const Hc = Math.max(sD + washNeed, lobbyD + carD + 16, sD + 10);
+    const serviceH = Hc - lobbyD - carD;
+    // the sealed shafts become one MECHANICAL ROOM (a single pod room; shafts squarified inside it)
+    const mechArea = areaOf(sealed);
+    const mechRoom = mechArea > 0 ? { key: "mech", type: "shaft", name: "Mechanical", wFt: Math.sqrt(mechArea), dFt: Math.sqrt(mechArea), access: "vestibule", isMech: true } : null;
+    const serviceRooms = boh.concat(mechRoom ? [mechRoom] : []);
+    const pod = packServicePods(serviceRooms, serviceH);
+    const centerW = Math.max(bankW, pod.width, 18);
+    const psc = centerW / (pod.width || 1);
     const washH = Hc - sD;
-    // washroom column width = the room's real depth (stall + aisle + lav), so it is not stretched skinny
     const Lw = Math.max(wcM ? wcM.dFt : 0, sW, 11);
     const Rw = Math.max(wcW ? wcW.dFt : 0, sW, 11);
-    const cx = Lw, totalW = Lw + centerW + Rw;
+    const cx = Lw, totalW = Lw + centerW + Rw, sy0 = lobbyD + carD;
     let y = 0;
     if (lobby) bandRow(lobby, y, lobbyD, cx, centerW); y += lobbyD;
     if (bank) bandRow(bank, y, carD, cx, centerW); y += carD;
-    // service row: closets/freight/stair-extras, then the mech room (sealed shafts squarified inside)
-    const scale = centerW / (rowNatW || 1);
-    let bx = cx;
-    for (const c of rowRooms) { const cw = c.wFt * scale; bandRow(c, y, Dsvc, bx, cw); bx += cw; }
-    if (sealed.length) {
-      const mw = mechW * scale;
-      squarify(sealed.map((c) => ({ area: c.wFt * c.dFt, cell: c })), bx, y, mw, Dsvc).forEach((p) => bandRow({ ...p.d.cell, access: "mech" }, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
-      bx += mw;
+    // place the pod rooms (scaled to fill centerW); the mech room gets its sealed shafts squarified inside
+    for (const c of pod.placed) {
+      const rx = cx + c.lx * psc, ry = sy0 + c.ly, rw = c.lw * psc, rh = c.lh;
+      if (c.isMech && sealed.length) {
+        squarify(sealed.map((s) => ({ area: s.wFt * s.dFt, cell: s })), rx, ry, rw, rh).forEach((p) => bandRow({ ...p.d.cell, access: "mech", vestId: c.vestId }, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
+      } else bandRow(c, ry, rh, rx, rw);
     }
-    y += Dsvc;
-    if (vest) bandRow(vest, y, vestD2, cx, centerW);
+    pod.vests.forEach((v, i) => bandRow({ key: "svcVest" + v.id, type: "lobby", name: pod.vests.length > 1 ? "Service vest " + (v.id + 1) : "Service vestibule", access: "floor", vestibule: true, vestId: v.id }, sy0 + v.ly, v.lh, cx + v.lx * psc, v.lw * psc));
     const stairsLocal = [];
     if (stairs[0]) stairsLocal.push({ ...stairs[0], lx: 0, ly: 0, lw: Lw, lh: sD });
     if (wcM) bandRow(wcM, sD, washH, 0, Lw);

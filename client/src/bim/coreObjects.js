@@ -96,12 +96,7 @@ export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, s
     const w = Math.min(Math.max(Math.sqrt(a), 2), 18), d = Math.max(a / w, 2);
     cells.push({ key: k, type: "shaft", name: names[k], wFt: Math.round(w * 10) / 10, dFt: Math.round(d * 10) / 10, group: accessByKey[k] ? "boh" : "mep", face: "blind", access: accessByKey[k] || "none" });
   }
-  // ---- service vestibule: the BOH circulation that freight + electrical + telecom + janitor open onto ----
-  const bohCells = cells.filter((c) => c.access === "vestibule");
-  if (bohCells.length) {
-    const vestW = Math.max(6, Math.min(12, bohCells.reduce((s, c) => s + c.wFt, 0) / 2));
-    cells.push({ key: "svcVest", type: "lobby", name: "Service vestibule", wFt: vestW, dFt: 6, group: "boh", face: "active", access: "floor", vestibule: true });
-  }
+  // service vestibules are created by the layout (it decides how many small pods to wrap the rooms around)
 
   return { cells, tracked };
 }
