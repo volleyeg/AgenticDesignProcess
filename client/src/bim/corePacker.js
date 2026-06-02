@@ -11,11 +11,12 @@ const rectsOverlap = (a, b) => a.x < b.x + b.w - 1 && a.x + a.w > b.x + 1 && a.y
 const groupCells = (cells) => ({
   bank: cells.find((c) => c.key === "liftBank"),
   lobby: cells.find((c) => c.key === "lobby"),
-  smoke: cells.find((c) => c.key === "smokeLobby"),
   washrooms: cells.filter((c) => c.type === "restroom"),
   stairs: cells.filter((c) => c.type === "stair"),
-  risers: cells.filter((c) => c.group === "mep"),
-  support: cells.filter((c) => c.group === "support" || c.key === "control" || (c.group === "egress" && c.type !== "stair")),
+  mep: cells.filter((c) => c.group === "mep"),                                    // sealed shafts, interior
+  boh: cells.filter((c) => c.group === "boh" && c.key !== "svcVest"),             // open onto the vestibule
+  vest: cells.find((c) => c.key === "svcVest"),
+  egressExtra: cells.filter((c) => c.group === "egress" && c.type !== "stair"),   // press/vest/refuge
 });
 
 // transform local band coords (x along length, y=depth 0=blind..D=active) to floor coords
@@ -78,8 +79,8 @@ export function packCore({ W, H, coreType = "central", corePosition = "center", 
       if (bank) out.push({ ...bank, wFt: r1(bank.wFt / 2), cars: Math.max(1, Math.ceil(bank.cars / 2)), name: `${Math.max(1, Math.ceil(bank.cars / 2))} lifts` });
       const lobby = cells.find((c) => c.key === "lobby"); if (lobby) out.push({ ...lobby, wFt: r1(lobby.wFt / 2) });
       out.push(...cells.filter((c) => c.key === (side === "W" ? "wcM" : "wcW")));
-      out.push(...cells.filter((c) => c.group === "mep").filter((_, i) => i % 2 === (side === "W" ? 0 : 1)));
-      out.push(...cells.filter((c) => (side === "W" ? c.key === "janitor" : c.key === "lactation") || (c.group === "egress" && c.type !== "stair")));
+      out.push(...cells.filter((c) => c.group === "mep" || c.group === "boh").filter((_, i) => i % 2 === (side === "W" ? 0 : 1)));
+      out.push(...cells.filter((c) => c.group === "egress" && c.type !== "stair").filter((_, i) => i % 2 === (side === "W" ? 0 : 1)));
       const st = stairsAll[side === "W" ? 0 : 1] || stairsAll[0]; if (st) out.push({ ...st });
       return out;
     };
@@ -122,7 +123,7 @@ export function packCore({ W, H, coreType = "central", corePosition = "center", 
   }
 
   // ---- grammar validation (guaranteed by construction; checked anyway) ----
-  const banks = placed.filter((c) => c.type === "elevator"), lobbies = placed.filter((c) => c.type === "lobby");
+  const banks = placed.filter((c) => c.type === "elevator" && !c.freight), lobbies = placed.filter((c) => c.type === "lobby");
   const adj = (a, b) => {
     const sx = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), sy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
     return (sx > 2 && (Math.abs(a.y + a.h - b.y) < 1.5 || Math.abs(b.y + b.h - a.y) < 1.5)) ||

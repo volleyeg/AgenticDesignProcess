@@ -18,6 +18,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   const cells = core.components || [];
   const stairs = core.stairCells || [];
   const corridor = cells.find((c) => c.key === "lobby")?.rect || cells.find((c) => c.type === "lobby")?.rect || null;
+  const vestRect = cells.find((c) => c.key === "svcVest")?.rect || null;
   const _all = [...cells, ...stairs].map((c) => c.rect).filter(Boolean);
   const coreBox = _all.length
     ? { x: Math.min(..._all.map((r) => r.x)), y: Math.min(..._all.map((r) => r.y)), w: 0, h: 0 }
@@ -77,8 +78,9 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   };
 
   // elevator bank -> individual car boxes with the shaft 'X'
-  const Elevator = ({ r, cars, svc, fs }) => {
-    const pax = Math.max(1, cars || 1), nsvc = Math.max(0, svc || 0), nfs = Math.max(0, fs || 0), n = pax + nsvc;
+  const Elevator = ({ r, cars, svc, fs, freight }) => {
+    const isFreight = !!freight;
+    const pax = isFreight ? 0 : Math.max(1, cars || 1), nsvc = isFreight ? Math.max(1, cars || 1) : Math.max(0, svc || 0), nfs = Math.max(0, fs || 0), n = pax + nsvc;
     const px = X(r.x) + wall, py = Y(r.y) + wall, pw = S(r.w) - wall * 2, ph = S(r.h) - wall * 2;
     const horiz = pw >= ph; const cw = horiz ? pw / n : pw, ch = horiz ? ph : ph / n;
     return (
@@ -198,7 +200,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
         F.push(<line key={"sd" + idx} x1={aisleX} y1={yy + 1} x2={stallsRight ? aisleX - 3.5 : aisleX + 3.5} y2={yy + h * 0.45} stroke={INK} strokeWidth="0.5" />);
         if (idx === 0) F.push(<circle key="acc" cx={sx + sd / 2} cy={yy + h / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
         yy += h; idx++; }
-      const lavN = Math.max(1, Math.min(4, Math.floor((fy1 - py) / lavP)));
+      const lavN = Math.max(1, Math.min(8, Math.floor((fy1 - py) / lavP)));
       for (let i = 0; i < lavN; i++) F.push(<rect key={"l" + i} x={lavX} y={py + 1 + i * lavP} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />);
       if (men) for (let i = 0; i < Math.min(2, lavN); i++) F.push(<rect key={"u" + i} x={lavX} y={fy1 - 4 - i * S(1.6)} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />);
       return wcGroup(F, r, men, vertical, e, (ph - clr / 2) / ph);
@@ -214,7 +216,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
       F.push(<line key={"sd" + idx} x1={xx + 1} y1={aisleY} x2={xx + w * 0.45} y2={stallsTop ? aisleY + 3.5 : aisleY - 3.5} stroke={INK} strokeWidth="0.5" />);
       if (idx === 0) F.push(<circle key="acc" cx={xx + w / 2} cy={sy + sd / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
       xx += w; idx++; }
-    const lavN = Math.max(1, Math.min(5, Math.floor((fx1 - px) / lavP)));
+    const lavN = Math.max(1, Math.min(9, Math.floor((fx1 - px) / lavP)));
     for (let i = 0; i < lavN; i++) F.push(<rect key={"l" + i} x={px + 1 + i * lavP} y={lavY} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />);
     return wcGroup(F, r, men, vertical, e, (pw - clr / 2) / pw);
   };
@@ -269,11 +271,16 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
       ))}
       {/* core objects */}
       {cells.filter((c) => inView(c.rect)).map((c, i) => {
-        if (c.type === "elevator") return <Elevator key={i} r={c.rect} cars={c.cars} svc={c.svc} fs={c.fs} />;
+        if (c.type === "elevator") return <Elevator key={i} r={c.rect} cars={c.cars} svc={c.svc} fs={c.fs} freight={c.freight} />;
         if (c.type === "restroom") return <Washroom key={i} r={c.rect} men={c.key === "wcM"} entry={perimeterEdge(c.rect)} />;
         return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={c.name} />;
       })}
       {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={perimeterEdge(s.rect)} />)}
+      {/* doors by access: vestibule rooms (incl freight) door into the service vestibule; floor rooms to the perimeter */}
+      {vestRect && cells.filter((c) => c.access === "vestibule" && inView(c.rect)).map((c, i) => {
+        const e = edgeToward(c.rect, vestRect); return e ? <Door key={"dv" + i} edge={e} r={c.rect} /> : null;
+      })}
+      {vestRect && <Door edge={perimeterEdge(vestRect)} r={vestRect} w={4} />}
     </svg>
   );
 }

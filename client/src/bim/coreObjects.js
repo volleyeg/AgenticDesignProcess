@@ -51,49 +51,55 @@ export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, s
   // ---- vertical transportation ----
   const pax = elevators.passengerCars, svc = elevators.freight, fs = elevators.fireService || 0;
   if (T.liftBank) {
-    const bankW = pax * D.liftPax.w + svc * D.liftService.w;
-    const bankD = Math.max(D.liftPax.d, svc ? D.liftService.d : 0);
-    cells.push({ key: "liftBank", type: "elevator", name: `${pax} lifts${svc ? ` +${svc} frt` : ""}`, wFt: bankW, dFt: bankD, group: "vt", face: "front", rows: 1, cars: pax, svc, fs });
-    // ONE enclosed elevator lobby (in a sprinklered building it is itself the smoke-protected lobby).
-    // Size it by the occupant-evacuation rule: >= 25% of the floor occupant load at 3 sf/person
-    // (IBC 3008.6.2), with the fire-service-access floor of 150 sf / no dimension < 8 ft (IBC 3007.6.4).
+    const bankW = pax * D.liftPax.w;                       // passenger cars only; freight is separate
+    const bankD = D.liftPax.d;
+    cells.push({ key: "liftBank", type: "elevator", name: `${pax} lifts`, wFt: bankW, dFt: bankD, group: "vt", face: "front", rows: 1, cars: pax, svc: 0, fs, access: "lobby" });
     if (T.lobby) {
       const oeeArea = 0.25 * floorOccupants * 3;
       const minArea = highRise ? Math.max(150, oeeArea) : Math.max(oeeArea, bankW * D.lobbyDepthFt);
       let lobW = bankW;
       let lobD = Math.max(D.lobbyDepthFt, highRise ? 8 : 0, minArea / lobW);
-      cells.push({ key: "lobby", type: "lobby", name: highRise ? "Elevator lobby (FSAE)" : "Elevator lobby", wFt: lobW, dFt: Math.round(lobD * 10) / 10, group: "vt", face: "active", rated: highRise });
+      cells.push({ key: "lobby", type: "lobby", name: highRise ? "Elevator lobby (FSAE)" : "Elevator lobby", wFt: lobW, dFt: Math.round(lobD * 10) / 10, group: "vt", face: "active", rated: highRise, access: "floor" });
     }
-    if (T.elevatorControl) cells.push({ key: "control", type: "shaft", name: "Lift control", wFt: D.control.w, dFt: D.control.d, group: "vt", face: "blind" });
+    if (T.elevatorControl) cells.push({ key: "control", type: "shaft", name: "Lift control", wFt: D.control.w, dFt: D.control.d, group: "boh", face: "blind", access: "vestibule" });
+    // freight / service elevator — reached from its OWN service vestibule, never the passenger lobby
+    if (svc > 0) cells.push({ key: "freight", type: "elevator", name: "Freight", wFt: svc * D.liftService.w, dFt: D.liftService.d, group: "boh", face: "blind", cars: svc, freight: true, access: "vestibule" });
   }
 
   // ---- egress ----
   if (T.stairs) for (let i = 0; i < stairCount; i++) {
-    cells.push({ key: "stair" + i, type: "stair", name: "Egress stair", wFt: D.stair.w, dFt: D.stair.d, group: "egress", face: "remote" });
-    if (highRise && T.stairVestibule) cells.push({ key: "vest" + i, type: "lobby", name: "Vestibule", wFt: D.vestibule.w, dFt: D.vestibule.d, group: "egress", face: "remote" });
-    if (highRise && T.stairPressShaft) cells.push({ key: "press" + i, type: "shaft", name: "Press. shaft", wFt: D.pressShaft.w, dFt: D.pressShaft.d, group: "egress", face: "blind" });
-    if (highRise && T.refuge) cells.push({ key: "refuge" + i, type: "refuge", name: "Refuge", wFt: D.refuge.w, dFt: D.refuge.d, group: "egress", face: "remote" });
+    cells.push({ key: "stair" + i, type: "stair", name: "Egress stair", wFt: D.stair.w, dFt: D.stair.d, group: "egress", face: "remote", access: "floor" });
+    if (highRise && T.stairVestibule) cells.push({ key: "vest" + i, type: "lobby", name: "Vestibule", wFt: D.vestibule.w, dFt: D.vestibule.d, group: "egress", face: "remote", access: "stair" });
+    if (highRise && T.stairPressShaft) cells.push({ key: "press" + i, type: "shaft", name: "Press. shaft", wFt: D.pressShaft.w, dFt: D.pressShaft.d, group: "egress", face: "blind", access: "none" });
+    if (highRise && T.refuge) cells.push({ key: "refuge" + i, type: "refuge", name: "Refuge", wFt: D.refuge.w, dFt: D.refuge.d, group: "egress", face: "remote", access: "stair" });
   }
 
   // ---- sanitary ----
   if (T.washrooms) {
     const m = washroomDims(wcPerSex, lavPerSex, true, D), w = washroomDims(wcPerSex, lavPerSex, false, D);
-    cells.push({ key: "wcM", type: "restroom", name: "Men", wFt: m.w, dFt: m.d, group: "sanitary", face: "blind" });
-    cells.push({ key: "wcW", type: "restroom", name: "Women", wFt: w.w, dFt: w.d, group: "sanitary", face: "blind" });
+    cells.push({ key: "wcM", type: "restroom", name: "Men", wFt: m.w, dFt: m.d, group: "sanitary", face: "blind", access: "floor" });
+    cells.push({ key: "wcW", type: "restroom", name: "Women", wFt: w.w, dFt: w.d, group: "sanitary", face: "blind", access: "floor" });
   }
-  if (T.janitor) cells.push({ key: "janitor", type: "shaft", name: "Janitor / sink", wFt: D.janitor.w, dFt: D.janitor.d, group: "support", face: "blind" });
-  if (T.lactation) cells.push({ key: "lactation", type: "lactation", name: "Lactation", wFt: D.lactation.w, dFt: D.lactation.d, group: "support", face: "blind" });
+  // janitor closet — reached from the service vestibule (lactation is TENANT scope, not base building)
+  if (T.janitor) cells.push({ key: "janitor", type: "shaft", name: "Janitor / sink", wFt: D.janitor.w, dFt: D.janitor.d, group: "boh", face: "blind", access: "vestibule" });
   if (T.drinkingFountain) tracked.push("drinking fountain (corridor niche)");
 
-  // ---- MEP shafts (split the program shaft budget across enabled risers) ----
+  // ---- MEP shafts. Electrical + telecom need per-floor access (NEC); duct/plumbing/fire are sealed risers. ----
   const shaftKeys = ["mechSupply", "mechExhaust", "electricalRiser", "dataRiser", "plumbingRiser", "fireRiser"];
   const names = { mechSupply: "Supply air", mechExhaust: "Exhaust air", electricalRiser: "Elec riser", dataRiser: "Data riser", plumbingRiser: "Plumb riser", fireRiser: "Fire riser", pressuriz: "Press riser" };
+  const accessByKey = { electricalRiser: "vestibule", dataRiser: "vestibule" };  // others sealed
   const active = shaftKeys.filter((k) => T[k]);
   const shareSum = active.reduce((s, k) => s + MEP_SHARES[k], 0) || 1;
   for (const k of active) {
     const a = shaftAreaFt2 * (MEP_SHARES[k] / shareSum);
     const w = Math.min(Math.max(Math.sqrt(a), 2), 18), d = Math.max(a / w, 2);
-    cells.push({ key: k, type: "shaft", name: names[k], wFt: Math.round(w * 10) / 10, dFt: Math.round(d * 10) / 10, group: "mep", face: "blind" });
+    cells.push({ key: k, type: "shaft", name: names[k], wFt: Math.round(w * 10) / 10, dFt: Math.round(d * 10) / 10, group: accessByKey[k] ? "boh" : "mep", face: "blind", access: accessByKey[k] || "none" });
+  }
+  // ---- service vestibule: the BOH circulation that freight + electrical + telecom + janitor open onto ----
+  const bohCells = cells.filter((c) => c.access === "vestibule");
+  if (bohCells.length) {
+    const vestW = Math.max(6, Math.min(12, bohCells.reduce((s, c) => s + c.wFt, 0) / 2));
+    cells.push({ key: "svcVest", type: "lobby", name: "Service vestibule", wFt: vestW, dFt: 6, group: "boh", face: "active", access: "floor", vestibule: true });
   }
 
   return { cells, tracked };

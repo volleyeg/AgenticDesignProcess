@@ -46,53 +46,64 @@ function squarify(items, x, y, w, h) {
 
 // ---- build the band stack (local coords: x along core length, y = depth; y=0 blind, y=D active) ----
 // returns { placed:[{...cell, lx,ly,lw,lh}], L, D, stairBands:{y0,y1} }
-function layoutBands({ bank, lobby, smoke, washrooms, risers, support, stairs, doubleLoaded, dims }) {
+function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExtra, doubleLoaded, dims }) {
   const carD = bank ? bank.dFt : 0;
-  const L = Math.max(bank ? bank.wFt : 12, washrooms.reduce((s, c) => s + c.wFt, 0), 18);
   const placed = [];
   const bandRow = (cell, y0, depth, x0, w) => placed.push({ ...cell, lx: x0, ly: y0, lw: w, lh: depth });
   const areaOf = (arr) => arr.reduce((s, c) => s + c.wFt * c.dFt, 0);
 
-  let y = 0;
   if (doubleLoaded) {
-    // THREE-COLUMN central core:
-    //   center: elevator lobby (top, opens to floor) / elevators / risers (interior, blind)
-    //   left  : stair (top corner, opens to floor) + Men's WC (opens to floor on the west face)
-    //   right : Women's WC (opens to floor on the east face) + stair (bottom corner, opens to floor)
-    // Washrooms sit on OPPOSITE faces; stairs sit at diagonal corners and exit to the FLOOR, never the lobby.
+    // THREE-COLUMN central core with real circulation:
+    //   center : elevator lobby (N, to floor) / pax elevators / sealed shafts (interior) /
+    //            BOH rooms (elec, data, janitor, control, freight) / SERVICE VESTIBULE (S, to floor)
+    //   sides  : stair at a diagonal corner + washroom (to floor) on each opposite face
+    // BOH rooms open into the service vestibule (freight too — never the passenger lobby); sealed
+    // duct/plumbing/fire shafts are interior (accessed off a mech floor), so they carry no door.
     const bankW = bank ? bank.wFt : 18;
     const lobbyD = lobby ? lobby.dFt : 0;
-    const interior = risers.concat(support);
-    const riserNat = interior.length ? areaOf(interior) / bankW : 0;
+    const sealed = mep.concat(egressExtra);                       // interior, no per-floor door
+    const bohRooms = boh.slice();                                 // open onto the service vestibule
+    const vestD = vest ? vest.dFt : 0;
+    const centerW = Math.max(bankW, bohRooms.reduce((s, c) => s + c.wFt, 0), 18);
+    const sealedD = sealed.length ? areaOf(sealed) / centerW : 0;
+    const bohD = bohRooms.length ? Math.max(...bohRooms.map((c) => c.dFt)) : 0;
     const sD = stairs.length ? stairs[0].dFt : 0, sW = stairs.length ? stairs[0].wFt : 0;
-    const Hc = Math.max(lobbyD + carD + riserNat, sD + 8);
-    const riserD = Hc - lobbyD - carD;
+    const Hc = Math.max(lobbyD + carD + sealedD + bohD + vestD, sD + 10);
+    const sealedD2 = sealedD + (Hc - (lobbyD + carD + sealedD + bohD + vestD));  // pad interior to square up
     const washH = Hc - sD;
     const wcM = washrooms.find((c) => c.key === "wcM") || washrooms[0] || null;
     const wcW = washrooms.find((c) => c.key === "wcW") || (washrooms[1] || null);
-    const Lw = Math.max(wcM ? (wcM.wFt * wcM.dFt) / washH : 0, sW);
-    const Rw = Math.max(wcW ? (wcW.wFt * wcW.dFt) / washH : 0, sW);
-    const cx = Lw, totalW = Lw + bankW + Rw;
-    if (lobby) bandRow(lobby, 0, lobbyD, cx, bankW);
-    if (bank) bandRow(bank, lobbyD, carD, cx, bankW);
-    if (interior.length) squarify(interior.map((c) => ({ area: c.wFt * c.dFt, cell: c })), cx, lobbyD + carD, bankW, riserD).forEach((p) => bandRow(p.d.cell, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
+    // washrooms: at least ~11 ft deep so a stall bank + aisle + lavs fit
+    const Lw = Math.max(wcM ? (wcM.wFt * wcM.dFt) / washH : 0, sW, 11);
+    const Rw = Math.max(wcW ? (wcW.wFt * wcW.dFt) / washH : 0, sW, 11);
+    const cx = Lw, totalW = Lw + centerW + Rw;
+    let y = 0;
+    if (lobby) bandRow(lobby, y, lobbyD, cx, centerW); y += lobbyD;
+    if (bank) bandRow(bank, y, carD, cx, centerW); y += carD;
+    if (sealed.length) squarify(sealed.map((c) => ({ area: c.wFt * c.dFt, cell: c })), cx, y, centerW, sealedD2).forEach((p) => bandRow(p.d.cell, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
+    y += sealedD2;
+    let bx = cx; for (const c of bohRooms) { const cw = centerW * (c.wFt / (bohRooms.reduce((s, k) => s + k.wFt, 0) || 1)); bandRow(c, y, bohD, bx, cw); bx += cw; } y += bohD;
+    if (vest) bandRow(vest, y, vestD, cx, centerW);
     const stairsLocal = [];
     if (stairs[0]) stairsLocal.push({ ...stairs[0], lx: 0, ly: 0, lw: Lw, lh: sD });
     if (wcM) bandRow(wcM, sD, washH, 0, Lw);
-    if (wcW) bandRow(wcW, 0, washH, cx + bankW, Rw);
-    if (stairs[1]) stairsLocal.push({ ...stairs[1], lx: cx + bankW, ly: Hc - sD, lw: Rw, lh: sD });
+    if (wcW) bandRow(wcW, 0, washH, cx + centerW, Rw);
+    if (stairs[1]) stairsLocal.push({ ...stairs[1], lx: cx + centerW, ly: Hc - sD, lw: Rw, lh: sD });
     for (let i = 2; i < stairs.length; i++) stairsLocal.push({ ...stairs[i], lx: 0, ly: Hc - sD, lw: Lw, lh: sD });
     return { placed, L: totalW, D: Hc, corridorY: 0, corridorY1: lobbyD, stairsLocal };
   }
-  // single-loaded: risers (blind) | [elevators | washrooms] front band | CORRIDOR (active)
-  const allRisers = risers.concat(support);
+
+  // single-loaded (side / end): risers (blind) | [elevators | washrooms] | corridor (active)
+  const interior = mep.concat(boh).concat(egressExtra).concat(vest ? [vest] : []);
+  const L0 = Math.max(bank ? bank.wFt : 12, washrooms.reduce((s, c) => s + c.wFt, 0), 18);
   const wcArea = areaOf(washrooms);
-  const frontD = Math.max(carD, 13);                 // front band depth (cars + washrooms front the spine)
-  const wcWidth = wcArea > 0 ? wcArea / frontD : 0;   // washrooms sized to that depth
+  const frontD = Math.max(carD, 13);
+  const wcWidth = wcArea > 0 ? wcArea / frontD : 0;
   const Lsingle = Math.max((bank ? bank.wFt : 0) + wcWidth, 16);
-  const riserD = areaOf(allRisers) / Lsingle;
-  if (allRisers.length) squarify(allRisers.map((c) => ({ area: c.wFt * c.dFt, cell: c })), 0, y, Lsingle, riserD).forEach((p) => bandRow(p.d.cell, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
-  if (allRisers.length) y += riserD;
+  let y = 0;
+  const riserD = interior.length ? areaOf(interior) / Lsingle : 0;
+  if (interior.length) squarify(interior.map((c) => ({ area: c.wFt * c.dFt, cell: c })), 0, y, Lsingle, riserD).forEach((p) => bandRow(p.d.cell, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
+  if (interior.length) y += riserD;
   if (bank) bandRow(bank, y, frontD, 0, bank.wFt);
   let wx = bank ? bank.wFt : 0;
   for (const c of washrooms) { const cw = (c.wFt * c.dFt) / frontD; bandRow(c, y, frontD, wx, cw); wx += cw; }
