@@ -339,6 +339,7 @@ export default function App() {
                 <span style={{ color: "var(--muted)" }}>occ/floor {shell.occupantLoad}</span>
                 <span style={{ color: "var(--muted)" }}>elevators <b style={{ color: "var(--ink)" }}>{shell.elevators.passengerCars}</b> pax in {shell.elevators.numZones}z{shell.elevators.skyLobby ? " +sky" : ""} · +{shell.elevators.freight}frt +{shell.elevators.fireService}fs @ {shell.elevators.speedFpm}fpm</span>
                 <span style={{ color: "var(--muted)" }}>stairs {shell.egress.stairsRequired} · sep {shell.egress.separationActualFt}/{shell.egress.separationRequiredFt}ft {shell.egress.ok ? "✓" : "✗"}</span>
+                <span style={{ color: "var(--muted)" }}>travel {shell.egress.travelWorstFt}/{shell.egress.travelMaxFt}ft {shell.egress.travelOk ? "✓" : "✗"} · dead-end ≤{shell.egress.deadEndMaxFt}ft · common path ≤{shell.egress.commonPathMaxFt}ft</span>
                 <span style={{ color: "var(--muted)" }}>WC {shell.restrooms.wcPerSex}/sex · lav {shell.restrooms.lavPerSex}/sex</span>
                 <span style={{ color: shell.feasible ? "var(--green)" : "var(--amber)" }}>grammar {shell.feasible ? "valid ✓" : "check ⚠"}</span>
               </div>

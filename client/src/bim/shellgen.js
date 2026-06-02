@@ -10,6 +10,7 @@ import { getProfile } from "./programProfiles.js";
 import { sizeElevators } from "./elevatoring.js";
 import { buildCoreObjects, CORE_TOGGLES } from "./coreObjects.js";
 import { packCore } from "./corePacker.js";
+import { egressCheck, egressFlags } from "./egress.js";
 
 const round = Math.round, max = Math.max, ceil = Math.ceil, sqrt = Math.sqrt;
 const fixtures = (n, first, fr, tr) => (n <= first ? max(1, ceil(n / fr)) : ceil(first / fr) + ceil((n - first) / tr));
@@ -77,6 +78,11 @@ export function generateShell({
   flags.push(...core.flags);
   if (!core.grammarOk) flags.push(...core.violations.map((x) => "grammar: " + x));
 
+  // ---- full egress code check (travel distance, remoteness, common path, dead-end) drives life-safety ----
+  const stairDoors = core.stairs.map((r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 }));
+  const egress = egressCheck({ W, H, diagonal, occLoad, stairDoors, sprinklered, highRise });
+  flags.push(...egressFlags(egress));
+
   // ---- efficiency ----
   const efficiency = (area - core.areaFt2) / area;
   const effLo = v(pack, "efficiency.targetLo");
@@ -92,7 +98,7 @@ export function generateShell({
     elevators,
     restrooms: { wcPerSex, lavPerSex },
     core, trackedNotDrawn: tracked,
-    egress: { stairsRequired: stairCount, capacity: egressCapacity, separationRequiredFt: core.egress.requiredFt, separationActualFt: core.egress.actualFt, ok: core.egress.ok },
+    egress: { stairsRequired: stairCount, capacity: egressCapacity, separationRequiredFt: core.egress.requiredFt, separationActualFt: core.egress.actualFt, ok: core.egress.ok, ...egress },
     efficiency: round(efficiency * 1000) / 10,
     flags,
   };
