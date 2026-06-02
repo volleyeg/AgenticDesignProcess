@@ -35,11 +35,10 @@ export function packCore({ W, H, coreType = "central", corePosition = "center", 
     if (cur.length) backRows.push(cur);
     const backDepth = backRows.reduce((s, r) => s + Math.max(...r.map((c) => c.dFt)), 0);
 
-    const dVt = (bank ? bank.dFt : 0) + (lobby ? lobby.dFt : 0) + (smoke ? smoke.dFt : 0);
-    const sanD = washrooms.length ? Math.max(...washrooms.map((c) => c.dFt)) : 0;
-    const bandDepth = Math.max(dVt, sanD);
+    const bankBandD = Math.max(bank ? bank.dFt : 0, ...washrooms.map((c) => c.dFt), 1);
+    const lobbyD = (lobby ? lobby.dFt : 0) + (smoke ? smoke.dFt : 0);
     const blockW = Math.max(vtSanW, ...backRows.map((r) => r.reduce((s, c) => s + c.wFt, 0)), 1);
-    const blockD = backDepth + bandDepth;
+    const blockD = backDepth + bankBandD + lobbyD;
     const stairW = stairs.length ? stairs[0].wFt : 0, stairD = stairs.length ? stairs[0].dFt : 0;
 
     // orientation: depth marches blind(0) -> active(blockD); widthAxis carries blockW
@@ -58,26 +57,31 @@ export function packCore({ W, H, coreType = "central", corePosition = "center", 
     };
 
     const placed = [];
-    // blind back services
+    // blind back services (risers etc.) along the back
     let d0 = 0;
     for (const r of backRows) { let w0 = wStart; const rd = Math.max(...r.map((c) => c.dFt)); for (const c of r) { placed.push({ ...c, rect: placeAt(d0, c.dFt, w0, c.wFt) }); w0 += c.wFt; } d0 += rd; }
-    // VT stack: bank -> lobby -> smoke lobby (toward the floor), all width = bankW so the lobby fronts the bank
-    let vy = d0;
-    if (bank) { placed.push({ ...bank, rect: placeAt(vy, bank.dFt, wStart, bankW) }); vy += bank.dFt; }
-    if (lobby) { placed.push({ ...lobby, rect: placeAt(vy, lobby.dFt, wStart, bankW) }); vy += lobby.dFt; }
-    if (smoke) { placed.push({ ...smoke, rect: placeAt(vy, smoke.dFt, wStart, bankW) }); vy += smoke.dFt; }
-    // washrooms beside the bank, at the band's blind edge
+    // bank + washrooms in a band, FRONT-aligned (their lobby-side edges flush) so the spine fronts both
+    const bandStart = d0;
+    const bandDepth = Math.max(bank ? bank.dFt : 0, ...washrooms.map((c) => c.dFt), 1);
+    const frontEdge = bandStart + bandDepth;
+    if (bank) placed.push({ ...bank, rect: placeAt(frontEdge - bank.dFt, bank.dFt, wStart, bankW) });
     let ww0 = wStart + bankW;
-    for (const c of washrooms) { placed.push({ ...c, rect: placeAt(d0, c.dFt, ww0, c.wFt) }); ww0 += c.wFt; }
+    for (const c of washrooms) { placed.push({ ...c, rect: placeAt(frontEdge - c.dFt, c.dFt, ww0, c.wFt) }); ww0 += c.wFt; }
+    // lobby spine: a corridor spanning the FULL band width, fronting bank AND washrooms; smoke lobby in front of it
+    const fullW = bankW + washW;
+    let ly = frontEdge;
+    if (lobby) { placed.push({ ...lobby, rect: placeAt(ly, lobby.dFt, wStart, fullW) }); ly += lobby.dFt; }
+    if (smoke) { placed.push({ ...smoke, rect: placeAt(ly, smoke.dFt, wStart, fullW) }); ly += smoke.dFt; }
+    const lobbyTop = frontEdge, lobbyBot = ly; // depth span of the lobby spine
 
-    // stairs: clean full-depth columns just outside the block's two width-ends
+    // stairs flank the two ends of the lobby spine (touching it = reachable), real 10x24, centered on the spine
     const stairsP = [];
-    const sDepth = Math.max(blockD, stairD);
-    if (stairs[0]) stairsP.push({ ...stairs[0], rect: placeAt(0, sDepth, wStart - stairW, stairW) });
-    if (stairs[1]) stairsP.push({ ...stairs[1], rect: placeAt(0, sDepth, wStart + blockW, stairW) });
-    for (let i = 2; i < stairs.length; i++) { const k = Math.floor((i - 2) / 2) + 1, left = i % 2 === 0; stairsP.push({ ...stairs[i], rect: placeAt(0, sDepth, left ? wStart - (k + 1) * stairW : wStart + blockW + k * stairW, stairW) }); }
+    const sY = Math.max(0, (lobbyTop + lobbyBot) / 2 - stairD / 2);
+    if (stairs[0]) stairsP.push({ ...stairs[0], rect: placeAt(sY, stairD, wStart - stairW, stairW) });
+    if (stairs[1]) stairsP.push({ ...stairs[1], rect: placeAt(sY, stairD, wStart + fullW, stairW) });
+    for (let i = 2; i < stairs.length; i++) { const k = Math.floor((i - 2) / 2) + 1, left = i % 2 === 0; stairsP.push({ ...stairs[i], rect: placeAt(sY, stairD, left ? wStart - (k + 1) * stairW : wStart + fullW + k * stairW, stairW) }); }
 
-    return { placed, stairsP, frontDir, blockW, blockD };
+    return { placed, stairsP, frontDir, blockW: Math.max(blockW, fullW), blockD };
   }
 
   let placed = [], stairsP = [], frontDir, footArea = 0, fits = true, collide = false;
