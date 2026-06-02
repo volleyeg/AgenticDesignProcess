@@ -51,26 +51,34 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   const inView = (r) => r.x + r.w > rx && r.x < rx + rw && r.y + r.h > ry && r.y < ry + rh;
 
   // ---- room drawing: dark envelope + inset interior = poché walls ----
-  const Room = ({ r, fill, children, label, sub }) => {
+  const CODE = { "Supply air": "SA", "Exhaust air": "EA", "Elec riser": "ELEC", "Data riser": "DATA", "Plumb riser": "PL", "Fire riser": "FP", "Lift control": "CTRL", "Janitor / sink": "JAN", "Lactation": "LACT", "Vestibule": "VEST", "Refuge": "REF", "Press. shaft": "PRES" };
+  const codeOf = (n) => CODE[n] || (n || "").split(/[ /.]+/).filter(Boolean).map((w) => w[0]).join("").toUpperCase().slice(0, 4);
+  const Room = ({ r, fill, children, label }) => {
     const px = X(r.x), py = Y(r.y), pw = S(r.w), ph = S(r.h);
-    const big = pw > 30 && ph > 16;
+    const iw = pw - wall * 2, ih = ph - wall * 2, cx = px + pw / 2, cy = py + ph / 2;
+    const rotate = ih > iw * 1.25;                       // tall-narrow box -> vertical text
+    const along = rotate ? ih : iw, across = rotate ? iw : ih;
+    let text = label || "", fs = 7;
+    if (text) {
+      const fits = (t, f) => t.length * f * 0.62 <= along - 3 && f <= across - 2;
+      if (!fits(text, 6)) text = codeOf(label);          // shorten to a code if the full name won't fit
+      fs = Math.max(4, Math.min(7, Math.min((along - 3) / Math.max(text.length * 0.62, 1), across - 2)));
+    }
     return (
       <g>
         <rect x={px} y={py} width={pw} height={ph} fill={POCHE} />
-        <rect x={px + wall} y={py + wall} width={Math.max(pw - wall * 2, 0)} height={Math.max(ph - wall * 2, 0)} fill={fill} />
+        <rect x={px + wall} y={py + wall} width={Math.max(iw, 0)} height={Math.max(ih, 0)} fill={fill} />
         {children}
-        {label && big && (
-          <text x={px + pw / 2} y={py + ph / 2} fill={INK} fontSize={Math.min(9, pw / 6)} textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "ui-monospace,monospace" }}>
-            {label}{sub ? <tspan x={px + pw / 2} dy="9" fontSize="6.5" fill="#6b6e73">{sub}</tspan> : null}
-          </text>
+        {text && across > 6 && (
+          <text x={cx} y={cy} fill={INK} fontSize={fs} textAnchor="middle" dominantBaseline="middle" transform={rotate ? `rotate(-90 ${cx} ${cy})` : undefined} style={{ fontFamily: "ui-monospace,monospace" }}>{text}</text>
         )}
       </g>
     );
   };
 
   // elevator bank -> individual car boxes with the shaft 'X'
-  const Elevator = ({ r, cars, svc }) => {
-    const pax = Math.max(1, cars || 1), nsvc = Math.max(0, svc || 0), n = pax + nsvc;
+  const Elevator = ({ r, cars, svc, fs }) => {
+    const pax = Math.max(1, cars || 1), nsvc = Math.max(0, svc || 0), nfs = Math.max(0, fs || 0), n = pax + nsvc;
     const px = X(r.x) + wall, py = Y(r.y) + wall, pw = S(r.w) - wall * 2, ph = S(r.h) - wall * 2;
     const horiz = pw >= ph; const cw = horiz ? pw / n : pw, ch = horiz ? ph : ph / n;
     return (
@@ -78,13 +86,15 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
         <rect x={X(r.x)} y={Y(r.y)} width={S(r.w)} height={S(r.h)} fill={POCHE} />
         {Array.from({ length: n }).map((_, i) => {
           const bx = horiz ? px + i * cw : px, by = horiz ? py : py + i * ch;
-          const freight = i >= pax;
+          const freight = i >= pax;                       // freight/service car
+          const fire = !freight && i < nfs;               // fire-service-designated passenger car
+          const tag = freight ? "FRT" : fire ? "FS" : "";
           return (
             <g key={i}>
               <rect x={bx + 0.6} y={by + 0.6} width={cw - 1.2} height={ch - 1.2} fill={freight ? "#e7e3d8" : TINT.elevator} stroke={INK} strokeWidth="0.5" />
               <line x1={bx + 1.5} y1={by + 1.5} x2={bx + cw - 1.5} y2={by + ch - 1.5} stroke="#8b9097" strokeWidth="0.4" />
               <line x1={bx + cw - 1.5} y1={by + 1.5} x2={bx + 1.5} y2={by + ch - 1.5} stroke="#8b9097" strokeWidth="0.4" />
-              {freight && Math.min(cw, ch) > 12 && <text x={bx + cw / 2} y={by + ch / 2} fill={INK} fontSize="6" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "ui-monospace,monospace" }}>FRT</text>}
+              {tag && Math.min(cw, ch) > 11 && <text x={bx + cw / 2} y={by + ch / 2} fill={INK} fontSize="5.5" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{tag}</text>}
             </g>
           );
         })}
@@ -138,14 +148,17 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     );
   };
 
-  // architectural door: a swing leaf + quarter-circle arc on the given edge of rect r
-  const Door = ({ edge, r, w: dw = 3 }) => {
+  // architectural door: a swing leaf + quarter-circle arc on the given edge of rect r.
+  // `at` = fraction along the edge (0..1) where the door sits (default centered).
+  const Door = ({ edge, r, w: dw = 3, at = 0.5 }) => {
     const px = X(r.x), py = Y(r.y), pw = S(r.w), ph = S(r.h), d = S(dw);
+    const tx = px + Math.max(d / 2, Math.min(pw - d / 2, pw * at));   // along-edge center (horizontal edges)
+    const ty = py + Math.max(d / 2, Math.min(ph - d / 2, ph * at));   // along-edge center (vertical edges)
     let hx, hy, lx, ly, ax, ay; // hinge, leaf-end, arc-end
-    if (edge === "top") { hx = px + pw / 2 - d / 2; hy = py; lx = hx; ly = hy + d; ax = hx + d; ay = hy; }
-    else if (edge === "bottom") { hx = px + pw / 2 - d / 2; hy = py + ph; lx = hx; ly = hy - d; ax = hx + d; ay = hy; }
-    else if (edge === "left") { hx = px; hy = py + ph / 2 - d / 2; lx = hx + d; ly = hy; ax = hx; ay = hy + d; }
-    else { hx = px + pw; hy = py + ph / 2 - d / 2; lx = hx - d; ly = hy; ax = hx; ay = hy + d; }
+    if (edge === "top") { hx = tx - d / 2; hy = py; lx = hx; ly = hy + d; ax = hx + d; ay = hy; }
+    else if (edge === "bottom") { hx = tx - d / 2; hy = py + ph; lx = hx; ly = hy - d; ax = hx + d; ay = hy; }
+    else if (edge === "left") { hx = px; hy = ty - d / 2; lx = hx + d; ly = hy; ax = hx; ay = hy + d; }
+    else { hx = px + pw; hy = ty - d / 2; lx = hx - d; ly = hy; ax = hx; ay = hy + d; }
     const sweep = edge === "top" || edge === "right" ? 1 : 0;
     return (
       <g>
@@ -165,54 +178,58 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   };
 
   // washroom: room + fixture symbols (stalls along back wall, lavs along front)
-  // washroom: stalls line the wall OPPOSITE the entry (doors face the aisle), lavs + urinals on a side
-  // wall, and a clear circulation aisle along the entry — the entry door never opens into a stall.
+  // washroom: stalls on the wall opposite the entry, lavs on the entry wall, a clear turning zone at
+  // the entry that the door opens into (ADA 603.2.3 — the entry door swings into clear space, never a fixture).
   const Washroom = ({ r, men, entry }) => {
     const px = X(r.x) + wall, py = Y(r.y) + wall, pw = S(r.w) - wall * 2, ph = S(r.h) - wall * 2;
     const e = entry || (ph >= pw ? "left" : "bottom");
-    const F = []; const sd = S(5); const run = S(3); const acc = S(5);
     const vertical = e === "left" || e === "right";
+    const F = []; const sd = S(5), run = S(3), acc = S(5), lavP = S(2.4);
+    const clr = Math.min(S(5.5), (vertical ? ph : pw) * 0.34);   // clear entry/turning zone (no fixtures)
     if (vertical) {
-      const stallsRight = e !== "right";                 // stalls on the wall opposite the entry
-      const sx = stallsRight ? px + pw - sd : px;
-      const aisleEdge = stallsRight ? sx : sx + sd;      // stall-door side faces the aisle
+      const stallsRight = e !== "right";
+      const sx = stallsRight ? px + pw - sd : px, aisleX = stallsRight ? sx : sx + sd;
+      const lavX = stallsRight ? px + 1 : px + pw - 1 - S(1.6);
+      const fy1 = py + ph - clr;                                 // clear zone is the bottom band
       let yy = py, idx = 0;
-      while (yy + run <= py + ph - 1) {
-        const h = idx === 0 ? acc : run; if (yy + h > py + ph) break;
+      while (yy + run <= fy1) { const h = idx === 0 ? acc : run; if (yy + h > fy1) break;
         F.push(<rect key={"s" + idx} x={sx} y={yy + 0.5} width={sd} height={h - 1} fill="none" stroke={INK} strokeWidth="0.5" />);
         F.push(<rect key={"t" + idx} x={stallsRight ? sx + sd - 4.5 : sx + 1.5} y={yy + h / 2 - 2} width={3} height={4} rx={1.3} fill="none" stroke={INK} strokeWidth="0.45" />);
-        F.push(<line key={"sd" + idx} x1={aisleEdge} y1={yy + 1} x2={stallsRight ? aisleEdge - 3.5 : aisleEdge + 3.5} y2={yy + h * 0.45} stroke={INK} strokeWidth="0.5" />);
+        F.push(<line key={"sd" + idx} x1={aisleX} y1={yy + 1} x2={stallsRight ? aisleX - 3.5 : aisleX + 3.5} y2={yy + h * 0.45} stroke={INK} strokeWidth="0.5" />);
         if (idx === 0) F.push(<circle key="acc" cx={sx + sd / 2} cy={yy + h / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
-        yy += h; idx++;
-      }
-      const lavX0 = stallsRight ? px + 1.5 : px + sd + S(2);   // lavs along the top wall over the aisle
-      const lavN = Math.max(1, Math.floor((pw - sd - S(2)) / S(2.2)));
-      for (let i = 0; i < lavN; i++) F.push(<rect key={"l" + i} x={lavX0 + i * S(2.2)} y={py + 1} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />);
-      if (men) { const uN = Math.max(1, Math.floor((pw - sd - S(2)) / S(1.8))); for (let i = 0; i < uN; i++) F.push(<rect key={"u" + i} x={lavX0 + i * S(1.8)} y={py + ph - 4} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />); }
-    } else {
-      const stallsTop = e !== "top";
-      const sy = stallsTop ? py : py + ph - sd;
-      const aisleEdge = stallsTop ? sy + sd : sy;
-      let xx = px, idx = 0;
-      while (xx + run <= px + pw - 1) {
-        const w = idx === 0 ? acc : run; if (xx + w > px + pw) break;
-        F.push(<rect key={"s" + idx} x={xx + 0.5} y={sy} width={w - 1} height={sd} fill="none" stroke={INK} strokeWidth="0.5" />);
-        F.push(<rect key={"t" + idx} x={xx + w / 2 - 1.5} y={stallsTop ? sy + sd - 4.5 : sy + 1.5} width={3} height={4} rx={1.3} fill="none" stroke={INK} strokeWidth="0.45" />);
-        F.push(<line key={"sd" + idx} x1={xx + 1} y1={aisleEdge} x2={xx + w * 0.45} y2={stallsTop ? aisleEdge + 3.5 : aisleEdge - 3.5} stroke={INK} strokeWidth="0.5" />);
-        if (idx === 0) F.push(<circle key="acc" cx={xx + w / 2} cy={sy + sd / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
-        xx += w; idx++;
-      }
-      const lavY0 = stallsTop ? py + sd + S(2) : py + 1;
-      const lavN = Math.max(1, Math.floor((pw - S(2)) / S(2.2)));
-      for (let i = 0; i < lavN; i++) F.push(<rect key={"l" + i} x={px + 1 + i * S(2.2)} y={lavY0} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />);
+        yy += h; idx++; }
+      const lavN = Math.max(1, Math.min(4, Math.floor((fy1 - py) / lavP)));
+      for (let i = 0; i < lavN; i++) F.push(<rect key={"l" + i} x={lavX} y={py + 1 + i * lavP} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />);
+      if (men) for (let i = 0; i < Math.min(2, lavN); i++) F.push(<rect key={"u" + i} x={lavX} y={fy1 - 4 - i * S(1.6)} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />);
+      return wcGroup(F, r, men, vertical, e, (ph - clr / 2) / ph);
     }
-    const big = pw > 24 && ph > 18;
+    const stallsTop = e !== "top";
+    const sy = stallsTop ? py : py + ph - sd, aisleY = stallsTop ? sy + sd : sy;
+    const lavY = stallsTop ? py + ph - 1 - 2.6 : py + 1;
+    const fx1 = px + pw - clr;
+    let xx = px, idx = 0;
+    while (xx + run <= fx1) { const w = idx === 0 ? acc : run; if (xx + w > fx1) break;
+      F.push(<rect key={"s" + idx} x={xx + 0.5} y={sy} width={w - 1} height={sd} fill="none" stroke={INK} strokeWidth="0.5" />);
+      F.push(<rect key={"t" + idx} x={xx + w / 2 - 1.5} y={stallsTop ? sy + sd - 4.5 : sy + 1.5} width={3} height={4} rx={1.3} fill="none" stroke={INK} strokeWidth="0.45" />);
+      F.push(<line key={"sd" + idx} x1={xx + 1} y1={aisleY} x2={xx + w * 0.45} y2={stallsTop ? aisleY + 3.5 : aisleY - 3.5} stroke={INK} strokeWidth="0.5" />);
+      if (idx === 0) F.push(<circle key="acc" cx={xx + w / 2} cy={sy + sd / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
+      xx += w; idx++; }
+    const lavN = Math.max(1, Math.min(5, Math.floor((fx1 - px) / lavP)));
+    for (let i = 0; i < lavN; i++) F.push(<rect key={"l" + i} x={px + 1 + i * lavP} y={lavY} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />);
+    return wcGroup(F, r, men, vertical, e, (pw - clr / 2) / pw);
+  };
+  const wcGroup = (F, r, men, vertical, e, doorAt) => {
+    const px = X(r.x) + wall, py = Y(r.y) + wall, pw = S(r.w) - wall * 2, ph = S(r.h) - wall * 2;
+    const big = pw > 22 && ph > 16;
+    const lx = vertical ? (e === "right" ? px + pw - 14 : px + 14) : px + pw / 2;
+    const ly = vertical ? py + ph - 7 : (e === "top" ? py + ph - 7 : py + 9);
     return (
       <g>
         <rect x={X(r.x)} y={Y(r.y)} width={S(r.w)} height={S(r.h)} fill={POCHE} />
         <rect x={px} y={py} width={pw} height={ph} fill={TINT.restroom} />
         {F}
-        {big && <text x={vertical ? (e === "right" ? px + pw - sd / 2 : px + sd / 2) : px + pw / 2} y={vertical ? py + ph / 2 : (e === "top" ? py + ph - 6 : py + 8)} fill={INK} fontSize="6.5" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{men ? "MEN" : "WOMEN"}</text>}
+        <Door edge={e} r={r} at={doorAt} />
+        {big && <text x={lx} y={ly} fill={INK} fontSize="6.5" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{men ? "MEN" : "WOMEN"}</text>}
       </g>
     );
   };
@@ -252,16 +269,11 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
       ))}
       {/* core objects */}
       {cells.filter((c) => inView(c.rect)).map((c, i) => {
-        if (c.type === "elevator") return <Elevator key={i} r={c.rect} cars={c.cars} svc={c.svc} />;
+        if (c.type === "elevator") return <Elevator key={i} r={c.rect} cars={c.cars} svc={c.svc} fs={c.fs} />;
         if (c.type === "restroom") return <Washroom key={i} r={c.rect} men={c.key === "wcM"} entry={perimeterEdge(c.rect)} />;
-        const label = c.rect.w * scale > 30 ? c.name : "";
-        return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={label} />;
+        return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={c.name} />;
       })}
       {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={perimeterEdge(s.rect)} />)}
-      {/* washrooms open OUT to the floor: door on whichever washroom edge lies on the core's outer boundary */}
-      {cells.filter((c) => c.type === "restroom" && inView(c.rect)).map((c, i) => (
-        <Door key={"d" + i} edge={perimeterEdge(c.rect)} r={c.rect} />
-      ))}
     </svg>
   );
 }

@@ -49,11 +49,11 @@ export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, s
   const D = dims, T = toggles, cells = [], tracked = [];
 
   // ---- vertical transportation ----
-  const pax = elevators.passengerCars, svc = elevators.freight + elevators.fireService;
+  const pax = elevators.passengerCars, svc = elevators.freight, fs = elevators.fireService || 0;
   if (T.liftBank) {
     const bankW = pax * D.liftPax.w + svc * D.liftService.w;
     const bankD = Math.max(D.liftPax.d, svc ? D.liftService.d : 0);
-    cells.push({ key: "liftBank", type: "elevator", name: `${pax} lifts${svc ? ` +${svc} svc` : ""}`, wFt: bankW, dFt: bankD, group: "vt", face: "front", rows: 1, cars: pax, svc });
+    cells.push({ key: "liftBank", type: "elevator", name: `${pax} lifts${svc ? ` +${svc} frt` : ""}`, wFt: bankW, dFt: bankD, group: "vt", face: "front", rows: 1, cars: pax, svc, fs });
     // ONE enclosed elevator lobby (in a sprinklered building it is itself the smoke-protected lobby).
     // Size it by the occupant-evacuation rule: >= 25% of the floor occupant load at 3 sf/person
     // (IBC 3008.6.2), with the fire-service-access floor of 150 sf / no dimension < 8 ft (IBC 3007.6.4).

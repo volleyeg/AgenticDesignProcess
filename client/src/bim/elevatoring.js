@@ -125,19 +125,21 @@ export function sizeElevators({ floorsAboveLobby, floorPopulation, profile, rise
 
   // service + life-safety cars
   const freight = floorsAboveLobby > profile.freightOverStories ? Math.max(1, Math.round(floorsAboveLobby / 40)) : (profile.freightOverStories <= 1 ? 1 : 0);
-  const fireService = riseFt > 120 ? 2 : 0;
+  // Fire service access elevators (IBC 3007, >120 ft) are DESIGNATED passenger cars, not extra cars:
+  // "no fewer than two ... or all elevators, whichever is less."
   const occupantEvac = riseFt > 420;
   if (occupantEvac) flags.push("very tall — occupant evacuation elevators likely required");
 
   const localCars = zones.reduce((s, z) => s + z.cars, 0);
   const shuttleCars = skyLobby ? Math.max(2, Math.ceil(localCars / 6)) : 0;
   const passengerCars = localCars + shuttleCars;
-  const totalCars = passengerCars + freight + fireService;
+  const fireService = riseFt > 120 ? Math.min(2, passengerCars) : 0;   // designation count, among the pax cars
+  const totalCars = passengerCars + freight;
 
-  // shaft footprint: cars sit in the core; service/fire cars are larger
+  // shaft footprint: cars sit in the core; the freight/service car is larger
   const paxShaftFt = carLb >= 4500 ? 9 : 8;             // bed/gurney cars wider
   const svcShaftFt = 10;
-  const elevAreaFt2 = passengerCars * paxShaftFt * paxShaftFt + (freight + fireService) * svcShaftFt * svcShaftFt;
+  const elevAreaFt2 = passengerCars * paxShaftFt * paxShaftFt + freight * svcShaftFt * svcShaftFt;
 
   return {
     method: "UPRTT", speedFpm: vFpm, skyLobby, numZones: zones.length,
