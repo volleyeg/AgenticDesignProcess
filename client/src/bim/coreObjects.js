@@ -51,11 +51,9 @@ export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, s
   // ---- vertical transportation ----
   const pax = elevators.passengerCars, svc = elevators.freight + elevators.fireService;
   if (T.liftBank) {
-    const rows = pax > 4 ? 2 : 1;
-    const perRow = Math.ceil(pax / rows);
-    const bankW = perRow * D.liftPax.w + svc * D.liftService.w;
-    const bankD = Math.max(rows * D.liftPax.d, svc ? D.liftService.d : 0);
-    cells.push({ key: "liftBank", type: "elevator", name: `${pax} lifts${svc ? ` +${svc} svc` : ""}`, wFt: bankW, dFt: bankD, group: "vt", face: "front", rows, cars: pax, svc });
+    const bankW = pax * D.liftPax.w + svc * D.liftService.w;
+    const bankD = Math.max(D.liftPax.d, svc ? D.liftService.d : 0);
+    cells.push({ key: "liftBank", type: "elevator", name: `${pax} lifts${svc ? ` +${svc} svc` : ""}`, wFt: bankW, dFt: bankD, group: "vt", face: "front", rows: 1, cars: pax, svc });
     if (T.lobby) cells.push({ key: "lobby", type: "lobby", name: "Lift lobby", wFt: bankW, dFt: D.lobbyDepthFt, group: "vt", face: "active" });
     if (T.elevatorControl) cells.push({ key: "control", type: "shaft", name: "Lift control", wFt: D.control.w, dFt: D.control.d, group: "vt", face: "blind" });
     if (highRise && T.smokeLobby) cells.push({ key: "smokeLobby", type: "lobby", name: "Smoke lobby", wFt: D.smokeLobby.w, dFt: D.smokeLobby.d, group: "vt", face: "active" });
