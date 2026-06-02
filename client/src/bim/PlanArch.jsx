@@ -17,6 +17,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   const { W, H, core, grid, facade } = shell;
   const cells = core.components || [];
   const stairs = core.stairCells || [];
+  const corridor = cells.find((c) => c.key === "lobby")?.rect || cells.find((c) => c.type === "lobby")?.rect || null;
 
   // view region
   let rx, ry, rw, rh, pad;
@@ -75,25 +76,65 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     );
   };
 
-  // stair: tread lines across the run + center up-arrow
-  const Stair = ({ r }) => {
+  // stair: two flights with a mid-landing (switchback) + a fire door at the entry edge
+  const Stair = ({ r, doorEdge }) => {
     const px = X(r.x), py = Y(r.y), pw = S(r.w), ph = S(r.h);
-    const horiz = pw >= ph; const treads = Math.max(4, Math.round((horiz ? r.w : r.h) / 1.0));
-    const lines = [];
-    for (let i = 1; i < treads; i++) {
-      const t = i / treads;
-      if (horiz) lines.push(<line key={i} x1={px + pw * t} y1={py + wall} x2={px + pw * t} y2={py + ph - wall} stroke="#7d7468" strokeWidth="0.5" />);
-      else lines.push(<line key={i} x1={px + wall} y1={py + ph * t} x2={px + pw - wall} y2={py + ph * t} stroke="#7d7468" strokeWidth="0.5" />);
+    const ix = px + wall, iy = py + wall, iw = pw - wall * 2, ih = ph - wall * 2;
+    const runV = ih >= iw;                         // flights run along the long axis
+    const flights = [];
+    // two parallel flights separated by a center stringer; landing at the far end
+    const landing = runV ? ih * 0.18 : iw * 0.18;
+    if (runV) {
+      const half = iw / 2, treads = Math.max(5, Math.round((ih - landing) / 2.2));
+      for (let f = 0; f < 2; f++) {
+        const fx = ix + f * half;
+        for (let i = 1; i < treads; i++) { const ty = iy + landing + ((ih - landing) * i) / treads; flights.push(<line key={f + "-" + i} x1={fx + 0.5} y1={ty} x2={fx + half - 0.5} y2={ty} stroke="#7d7468" strokeWidth="0.5" />); }
+      }
+      flights.push(<line key="str" x1={ix + half} y1={iy + landing} x2={ix + half} y2={iy + ih} stroke={INK} strokeWidth="0.6" />);
+      flights.push(<line key="ar" x1={ix + half * 0.5} y1={iy + ih - 2} x2={ix + half * 0.5} y2={iy + landing + 2} stroke={INK} strokeWidth="0.8" markerEnd="url(#arr)" />);
+    } else {
+      const half = ih / 2, treads = Math.max(5, Math.round((iw - landing) / 2.2));
+      for (let f = 0; f < 2; f++) {
+        const fy = iy + f * half;
+        for (let i = 1; i < treads; i++) { const tx = ix + landing + ((iw - landing) * i) / treads; flights.push(<line key={f + "-" + i} x1={tx} y1={fy + 0.5} x2={tx} y2={fy + half - 0.5} stroke="#7d7468" strokeWidth="0.5" />); }
+      }
+      flights.push(<line key="str" x1={ix + landing} y1={iy + half} x2={ix + iw} y2={iy + half} stroke={INK} strokeWidth="0.6" />);
+      flights.push(<line key="ar" x1={ix + iw - 2} y1={iy + half * 0.5} x2={ix + landing + 2} y2={iy + half * 0.5} stroke={INK} strokeWidth="0.8" markerEnd="url(#arr)" />);
     }
     return (
       <g>
         <rect x={px} y={py} width={pw} height={ph} fill={POCHE} />
-        <rect x={px + wall} y={py + wall} width={Math.max(pw - wall * 2, 0)} height={Math.max(ph - wall * 2, 0)} fill={TINT.stair} />
-        {lines}
-        <line x1={horiz ? px + pw * 0.2 : px + pw / 2} y1={horiz ? py + ph / 2 : py + ph * 0.8} x2={horiz ? px + pw * 0.8 : px + pw / 2} y2={horiz ? py + ph / 2 : py + ph * 0.2} stroke={INK} strokeWidth="0.8" markerEnd="url(#arr)" />
-        {pw > 22 && ph > 22 && <text x={px + pw / 2} y={py + ph - 5} fill={INK} fontSize="6" textAnchor="middle" style={{ fontFamily: "ui-monospace,monospace" }}>UP</text>}
+        <rect x={ix} y={iy} width={Math.max(iw, 0)} height={Math.max(ih, 0)} fill={TINT.stair} />
+        {flights}
+        {doorEdge && <Door edge={doorEdge} r={r} into="in" />}
       </g>
     );
+  };
+
+  // architectural door: a swing leaf + quarter-circle arc on the given edge of rect r
+  const Door = ({ edge, r, w: dw = 3 }) => {
+    const px = X(r.x), py = Y(r.y), pw = S(r.w), ph = S(r.h), d = S(dw);
+    let hx, hy, lx, ly, ax, ay; // hinge, leaf-end, arc-end
+    if (edge === "top") { hx = px + pw / 2 - d / 2; hy = py; lx = hx; ly = hy + d; ax = hx + d; ay = hy; }
+    else if (edge === "bottom") { hx = px + pw / 2 - d / 2; hy = py + ph; lx = hx; ly = hy - d; ax = hx + d; ay = hy; }
+    else if (edge === "left") { hx = px; hy = py + ph / 2 - d / 2; lx = hx + d; ly = hy; ax = hx; ay = hy + d; }
+    else { hx = px + pw; hy = py + ph / 2 - d / 2; lx = hx - d; ly = hy; ax = hx; ay = hy + d; }
+    const sweep = edge === "top" || edge === "right" ? 1 : 0;
+    return (
+      <g>
+        <rect x={edge === "left" || edge === "right" ? hx - 1 : hx} y={edge === "top" || edge === "bottom" ? hy - 1 : hy} width={edge === "left" || edge === "right" ? 2 : d} height={edge === "top" || edge === "bottom" ? 2 : d} fill={SHEET} />
+        <line x1={hx} y1={hy} x2={lx} y2={ly} stroke={INK} strokeWidth="0.7" />
+        <path d={`M ${lx} ${ly} A ${d} ${d} 0 0 ${sweep} ${ax} ${ay}`} fill="none" stroke={INK} strokeWidth="0.4" />
+      </g>
+    );
+  };
+  // which edge of room r faces corridor rect c (shares an edge)?
+  const edgeToward = (r, c) => {
+    if (Math.abs(r.y - (c.y + c.h)) < 1.2 && r.x < c.x + c.w && r.x + r.w > c.x) return "top";
+    if (Math.abs((r.y + r.h) - c.y) < 1.2 && r.x < c.x + c.w && r.x + r.w > c.x) return "bottom";
+    if (Math.abs(r.x - (c.x + c.w)) < 1.2 && r.y < c.y + c.h && r.y + r.h > c.y) return "left";
+    if (Math.abs((r.x + r.w) - c.x) < 1.2 && r.y < c.y + c.h && r.y + r.h > c.y) return "right";
+    return null;
   };
 
   // washroom: room + fixture symbols (stalls along back wall, lavs along front)
@@ -161,7 +202,11 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
         const label = c.rect.w * scale > 30 ? c.name : "";
         return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={label} />;
       })}
-      {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} />)}
+      {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={corridor ? edgeToward(s.rect, corridor) : null} />)}
+      {/* doors = traffic flow: every entered room connects to the lift-lobby corridor */}
+      {corridor && cells.filter((c) => c.type === "restroom" && inView(c.rect)).map((c, i) => {
+        const e = edgeToward(c.rect, corridor); return e ? <Door key={"d" + i} edge={e} r={c.rect} /> : null;
+      })}
     </svg>
   );
 }
