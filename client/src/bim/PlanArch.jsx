@@ -23,7 +23,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   const nearestVest = (r) => vestCells.length ? vestCells.map((v) => v.rect).sort((a, b) => (Math.hypot(a.x - r.x, a.y - r.y) - Math.hypot(b.x - r.x, b.y - r.y)))[0] : null;
   const vestFor = (c) => (c.vestId != null && vestById[c.vestId]) || nearestVest(c.rect);
   const mechCells = cells.filter((c) => c.access === "mech");
-  const mechByVest = mechCells.length ? { all: mechCells.map((c) => c.rect) } : {};
+  const mechByVest = {}; mechCells.forEach((c) => { const k = c.vestId != null ? c.vestId : "all"; (mechByVest[k] = mechByVest[k] || []).push(c.rect); });
   const bbox = (rects) => ({ x: Math.min(...rects.map((r) => r.x)), y: Math.min(...rects.map((r) => r.y)), w: Math.max(...rects.map((r) => r.x + r.w)) - Math.min(...rects.map((r) => r.x)), h: Math.max(...rects.map((r) => r.y + r.h)) - Math.min(...rects.map((r) => r.y)) });
   const _all = [...cells, ...stairs].map((c) => c.rect).filter(Boolean);
   const coreBox = _all.length
@@ -168,7 +168,9 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   // architectural door: a swing leaf + quarter-circle arc on the given edge of rect r.
   // `at` = fraction along the edge (0..1) where the door sits (default centered).
   const Door = ({ edge, r, w: dw = 3, at = 0.5 }) => {
-    const px = X(r.x), py = Y(r.y), pw = S(r.w), ph = S(r.h), d = S(dw);
+    const px = X(r.x), py = Y(r.y), pw = S(r.w), ph = S(r.h);
+    const edgePx = edge === "top" || edge === "bottom" ? pw : ph;
+    const d = Math.min(S(dw), edgePx * 0.7);                         // never wider than the edge it sits on
     const tx = px + Math.max(d / 2, Math.min(pw - d / 2, pw * at));   // along-edge center (horizontal edges)
     const ty = py + Math.max(d / 2, Math.min(ph - d / 2, ph * at));   // along-edge center (vertical edges)
     let hx, hy, lx, ly, ax, ay; // hinge, leaf-end, arc-end
@@ -242,11 +244,25 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     const big = pw > 22 && ph > 16;
     const lx = vertical ? (e === "right" ? px + pw - 14 : px + 14) : px + pw / 2;
     const ly = vertical ? py + ph - 7 : (e === "top" ? py + ph - 7 : py + 9);
+    // privacy baffle: a short free-standing screen just inside the entry; blocks the sightline from the
+    // open floor (you step in and round either end) — the in-washroom vestibule the rule calls for.
+    const t = Math.max(2, wall * 1.4), inset = S(3.2);
+    let baffle = null;
+    if (e === "bottom" || e === "top") {
+      const len = Math.min(S(5.5), pw * 0.6), yS = e === "bottom" ? py + ph - inset : py + inset;
+      const xC = px + Math.max(len / 2, Math.min(pw - len / 2, pw * doorAt));
+      baffle = <rect x={xC - len / 2} y={yS - t / 2} width={len} height={t} fill={POCHE} stroke={INK} strokeWidth="0.4" />;
+    } else {
+      const len = Math.min(S(5.5), ph * 0.6), xS = e === "right" ? px + pw - inset : px + inset;
+      const yC = py + Math.max(len / 2, Math.min(ph - len / 2, ph * doorAt));
+      baffle = <rect x={xS - t / 2} y={yC - len / 2} width={t} height={len} fill={POCHE} stroke={INK} strokeWidth="0.4" />;
+    }
     return (
       <g>
         <rect x={X(r.x)} y={Y(r.y)} width={S(r.w)} height={S(r.h)} fill={POCHE} />
         <rect x={px} y={py} width={pw} height={ph} fill={TINT.restroom} />
         {F}
+        {baffle}
         <Door edge={e} r={r} at={doorAt} />
         {big && <text x={lx} y={ly} fill={INK} fontSize="6.5" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{men ? "MEN" : "WOMEN"}</text>}
       </g>
@@ -298,7 +314,8 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
         const v = vestFor(c); const e = v ? edgeToward(c.rect, v) : null; return e ? <Door key={"dv" + i} edge={e} r={c.rect} /> : null;
       })}
       {Object.keys(mechByVest).map((k, i) => {
-        const mr = bbox(mechByVest[k]); return inView(mr) ? <Door key={"dm" + i} edge={perimeterEdge(mr)} r={mr} /> : null;
+        const mr = bbox(mechByVest[k]); const v = vestById[k]; const e = v ? edgeToward(mr, v) : perimeterEdge(mr);
+        return inView(mr) ? <Door key={"dm" + i} edge={e} r={mr} /> : null;
       })}
       {vestCells.filter((v) => !v.filler && inView(v.rect)).map((v, i) => <Door key={"dvf" + i} edge={perimeterEdge(v.rect)} r={v.rect} w={4} />)}
     </svg>

@@ -126,9 +126,9 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
     const washNeed = Math.max(wcM ? wcM.wFt : 0, wcW ? wcW.wFt : 0) + 8;
     const Hc = Math.max(sD + washNeed, lobbyD + carD + 16, sD + 10);
     const serviceH = Hc - lobbyD - carD;
-    // the sealed ducts become one MECHANICAL ROOM that doors straight to the floor (shafts squarified inside)
+    // the sealed ducts + risers become one HVAC/MECH ROOM on the shared service vestibule (shafts squarified inside)
     const mechArea = areaOf(sealed);
-    const mechRoom = mechArea > 0 ? { key: "mech", type: "shaft", name: "Mechanical", wFt: Math.sqrt(mechArea), dFt: Math.sqrt(mechArea), access: "floor", isMech: true } : null;
+    const mechRoom = mechArea > 0 ? { key: "mech", type: "shaft", name: "Mech / HVAC", wFt: Math.sqrt(mechArea), dFt: Math.sqrt(mechArea), access: "shared", isMech: true } : null;
     const serviceRooms = boh.concat(mechRoom ? [mechRoom] : []);
     const pod = packServiceZone(serviceRooms, serviceH, dims);
     const centerW = Math.max(bankW, pod.width, 18);
@@ -144,10 +144,11 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
     for (const c of pod.placed) {
       const rx = cx + c.lx * psc, ry = sy0 + c.ly, rw = c.lw * psc, rh = c.lh;
       if (c.isMech && sealed.length) {
-        squarify(sealed.map((s) => ({ area: s.wFt * s.dFt, cell: s })), rx, ry, rw, rh).forEach((p) => bandRow({ ...p.d.cell, access: "mech" }, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
+        squarify(sealed.map((s) => ({ area: s.wFt * s.dFt, cell: s })), rx, ry, rw, rh).forEach((p) => bandRow({ ...p.d.cell, access: "mech", vestId: c.vestId }, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
       } else bandRow(c, ry, rh, rx, rw);
     }
-    pod.vests.forEach((v, i) => bandRow({ key: "svcVest" + v.id + "_" + i, type: "lobby", name: v.dedicated ? "Freight lobby" : "Service vest", access: "floor", vestibule: true, vestId: v.id, dedicated: v.dedicated, filler: v.filler }, sy0 + v.ly, v.lh, cx + v.lx * psc, v.lw * psc));
+    // one label per service vestibule (the L-shaped freight lobby is one space, drawn as strip + filler — label only the strip)
+    pod.vests.forEach((v, i) => bandRow({ key: "svcVest" + v.id + "_" + i, type: "lobby", name: v.filler ? "" : (v.dedicated ? "Freight lobby" : "Service vest"), access: "floor", vestibule: true, vestId: v.id, dedicated: v.dedicated, filler: v.filler }, sy0 + v.ly, v.lh, cx + v.lx * psc, v.lw * psc));
     const stairsLocal = [];
     if (stairs[0]) stairsLocal.push({ ...stairs[0], lx: 0, ly: 0, lw: Lw, lh: sD });
     if (wcM) bandRow(wcM, sD, washH, 0, Lw);

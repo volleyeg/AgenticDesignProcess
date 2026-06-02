@@ -95,7 +95,7 @@ export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, s
   // Sealed risers (air/plumb/fire/press) sit in the HVAC room; electrical + telecom need access (NEC). ----
   const shaftKeys = ["mechSupply", "mechExhaust", "electricalRiser", "dataRiser", "plumbingRiser", "fireRiser"];
   const names = { mechSupply: "Supply air", mechExhaust: "Exhaust air", electricalRiser: "Elec riser", dataRiser: "Data riser", plumbingRiser: "Plumb riser", fireRiser: "Fire riser", pressuriz: "Press riser" };
-  const accessByKey = { electricalRiser: "shared", dataRiser: "shared" };  // others sealed -> HVAC room
+  const accessByKey = {};  // all risers are sealed shafts (access panels) inside the HVAC/mech room
   const ds = Math.max(0.85, Math.min(1.9, 0.85 + (floorOccupants || 150) / 1400 + (highRise ? 0.2 : 0)));  // mild size scale
   const active = shaftKeys.filter((k) => T[k]);
   for (const k of active) {
