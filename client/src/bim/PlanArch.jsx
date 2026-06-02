@@ -177,7 +177,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     else if (edge === "bottom") { hx = tx - d / 2; hy = py + ph; lx = hx; ly = hy - d; ax = hx + d; ay = hy; }
     else if (edge === "left") { hx = px; hy = ty - d / 2; lx = hx + d; ly = hy; ax = hx; ay = hy + d; }
     else { hx = px + pw; hy = ty - d / 2; lx = hx - d; ly = hy; ax = hx; ay = hy + d; }
-    const sweep = edge === "top" || edge === "right" ? 1 : 0;
+    const sweep = edge === "top" || edge === "right" ? 0 : 1;
     return (
       <g>
         <rect x={edge === "left" || edge === "right" ? hx - 1 : hx} y={edge === "top" || edge === "bottom" ? hy - 1 : hy} width={edge === "left" || edge === "right" ? 2 : d} height={edge === "top" || edge === "bottom" ? 2 : d} fill={SHEET} />
