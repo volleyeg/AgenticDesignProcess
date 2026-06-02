@@ -45,12 +45,18 @@ function buildCluster(cells, type, position, doubleLoaded, W, H, dims) {
   const g = groupCells(cells);
   const lay = layoutBands({ ...g, doubleLoaded, dims });
   const stairW = g.stairs.length ? g.stairs[0].wFt : 0, stairD = g.stairs.length ? g.stairs[0].dFt : 0;
-  const cY = (lay.corridorY + lay.corridorY1) / 2 - stairD / 2;
-  const stairsLocal = [];
-  if (g.stairs[0]) stairsLocal.push({ ...g.stairs[0], lx: -stairW, ly: cY, lw: stairW, lh: stairD });
-  if (g.stairs[1]) stairsLocal.push({ ...g.stairs[1], lx: lay.L, ly: cY, lw: stairW, lh: stairD });
-  for (let i = 2; i < g.stairs.length; i++) { const k = Math.floor((i - 2) / 2) + 1, left = i % 2 === 0; stairsLocal.push({ ...g.stairs[i], lx: left ? -(k + 1) * stairW : lay.L + k * stairW, ly: cY, lw: stairW, lh: stairD }); }
-  const { frontDir, f } = transformer(type, position, lay.L, lay.D, stairW, W, H);
+  let stairsLocal, flankOffset;
+  if (lay.stairsLocal) {                 // central: stairs already placed at diagonal corners inside the core
+    stairsLocal = lay.stairsLocal; flankOffset = 0;
+  } else {                               // single-loaded: flank the corridor ends
+    const cY = (lay.corridorY + lay.corridorY1) / 2 - stairD / 2;
+    stairsLocal = [];
+    if (g.stairs[0]) stairsLocal.push({ ...g.stairs[0], lx: -stairW, ly: cY, lw: stairW, lh: stairD });
+    if (g.stairs[1]) stairsLocal.push({ ...g.stairs[1], lx: lay.L, ly: cY, lw: stairW, lh: stairD });
+    for (let i = 2; i < g.stairs.length; i++) { const k = Math.floor((i - 2) / 2) + 1, left = i % 2 === 0; stairsLocal.push({ ...g.stairs[i], lx: left ? -(k + 1) * stairW : lay.L + k * stairW, ly: cY, lw: stairW, lh: stairD }); }
+    flankOffset = stairW;
+  }
+  const { frontDir, f } = transformer(type, position, lay.L, lay.D, flankOffset, W, H);
   return {
     frontDir,
     placed: lay.placed.map((c) => ({ ...c, rect: f(c.lx, c.ly, c.lw, c.lh) })),

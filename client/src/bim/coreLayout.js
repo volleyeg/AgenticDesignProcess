@@ -55,20 +55,34 @@ function layoutBands({ bank, lobby, smoke, washrooms, risers, support, stairs, d
 
   let y = 0;
   if (doubleLoaded) {
-    // ELEVATOR LOBBY (outer face, opens to floor) -> elevators (open into lobby) -> risers (interior, blind)
-    // -> washrooms + janitor + lactation (far outer face, open OUT to the floor, never into a core room)
-    const corridorY = y; if (lobby) { bandRow(lobby, y, lobby.dFt, 0, L); y += lobby.dFt; }
-    const corridorY1 = y;
-    if (bank) { bandRow(bank, y, carD, 0, L); y += carD; }
+    // THREE-COLUMN central core:
+    //   center: elevator lobby (top, opens to floor) / elevators / risers (interior, blind)
+    //   left  : stair (top corner, opens to floor) + Men's WC (opens to floor on the west face)
+    //   right : Women's WC (opens to floor on the east face) + stair (bottom corner, opens to floor)
+    // Washrooms sit on OPPOSITE faces; stairs sit at diagonal corners and exit to the FLOOR, never the lobby.
+    const bankW = bank ? bank.wFt : 18;
+    const lobbyD = lobby ? lobby.dFt : 0;
     const interior = risers.concat(support);
-    const riserD = interior.length ? areaOf(interior) / L : 0;
-    if (interior.length) squarify(interior.map((c) => ({ area: c.wFt * c.dFt, cell: c })), 0, y, L, riserD).forEach((p) => bandRow(p.d.cell, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
-    y += riserD;
-    const accessed = washrooms.slice();
-    const accD = accessed.length ? areaOf(accessed) / L : 0;
-    let ax = 0; for (const c of accessed) { const cw = (c.wFt * c.dFt) / accD; bandRow(c, y, accD, ax, cw); ax += cw; }
-    y += accD;
-    return { placed, L, D: y, corridorY, corridorY1 };
+    const riserNat = interior.length ? areaOf(interior) / bankW : 0;
+    const sD = stairs.length ? stairs[0].dFt : 0, sW = stairs.length ? stairs[0].wFt : 0;
+    const Hc = Math.max(lobbyD + carD + riserNat, sD + 8);
+    const riserD = Hc - lobbyD - carD;
+    const washH = Hc - sD;
+    const wcM = washrooms.find((c) => c.key === "wcM") || washrooms[0] || null;
+    const wcW = washrooms.find((c) => c.key === "wcW") || (washrooms[1] || null);
+    const Lw = Math.max(wcM ? (wcM.wFt * wcM.dFt) / washH : 0, sW);
+    const Rw = Math.max(wcW ? (wcW.wFt * wcW.dFt) / washH : 0, sW);
+    const cx = Lw, totalW = Lw + bankW + Rw;
+    if (lobby) bandRow(lobby, 0, lobbyD, cx, bankW);
+    if (bank) bandRow(bank, lobbyD, carD, cx, bankW);
+    if (interior.length) squarify(interior.map((c) => ({ area: c.wFt * c.dFt, cell: c })), cx, lobbyD + carD, bankW, riserD).forEach((p) => bandRow(p.d.cell, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
+    const stairsLocal = [];
+    if (stairs[0]) stairsLocal.push({ ...stairs[0], lx: 0, ly: 0, lw: Lw, lh: sD });
+    if (wcM) bandRow(wcM, sD, washH, 0, Lw);
+    if (wcW) bandRow(wcW, 0, washH, cx + bankW, Rw);
+    if (stairs[1]) stairsLocal.push({ ...stairs[1], lx: cx + bankW, ly: Hc - sD, lw: Rw, lh: sD });
+    for (let i = 2; i < stairs.length; i++) stairsLocal.push({ ...stairs[i], lx: 0, ly: Hc - sD, lw: Lw, lh: sD });
+    return { placed, L: totalW, D: Hc, corridorY: 0, corridorY1: lobbyD, stairsLocal };
   }
   // single-loaded: risers (blind) | [elevators | washrooms] front band | CORRIDOR (active)
   const allRisers = risers.concat(support);
