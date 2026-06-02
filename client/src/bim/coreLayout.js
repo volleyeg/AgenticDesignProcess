@@ -111,51 +111,63 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
   const areaOf = (arr) => arr.reduce((s, c) => s + c.wFt * c.dFt, 0);
 
   if (doubleLoaded) {
-    // THREE-COLUMN central core with real circulation:
-    //   center : elevator lobby (N) / pax elevators / SERVICE PODS (small vestibules with rooms wrapped
-    //            around them, each vestibule opening S to the floor) — count chosen by the packer search
-    //   sides  : stair at a diagonal corner + washroom (to floor) on each opposite face
+    // LANDSCAPE central core (precedent image 4: wide + shallow). Elements sit SIDE BY SIDE across the
+    // width in a shallow band of depth D; every room reaches a floor edge (N or S), so there is no dead
+    // service vestibule. Stairs go to the far L/R corners (max remoteness); the pax bank + lobby sit
+    // centrally (central lobby). Local y=0 = back/N edge, y=D = front/S edge — both face the floor.
     const bankW = bank ? bank.wFt : 18;
-    const lobbyD = lobby ? lobby.dFt : 0;
+    const lobbyD = lobby ? lobby.dFt : 10;
+    const sD = stairs.length ? stairs[0].dFt : 15, sW = stairs.length ? stairs[0].wFt : 10;
     const pressShafts = egressExtra.filter((c) => c.key && c.key.startsWith("press"));
-    const sealed = mep.concat(pressShafts);                                        // -> inside a mech room
-    // stair vestibule / refuge belong at the stairs (folded into the stair enclosure here), not in service pods
-    const sD = stairs.length ? stairs[0].dFt : 0, sW = stairs.length ? stairs[0].wFt : 0;
+    const sealed = mep.concat(pressShafts);
     const wcM = washrooms.find((c) => c.key === "wcM") || washrooms[0] || null;
-    const wcW = washrooms.find((c) => c.key === "wcW") || (washrooms[1] || null);
-    const washNeed = Math.max(wcM ? wcM.wFt : 0, wcW ? wcW.wFt : 0) + 8;
-    const Hc = Math.max(sD + washNeed, lobbyD + carD + 16, sD + 10);
-    const serviceH = Hc - lobbyD - carD;
-    // the sealed ducts + risers become one HVAC/MECH ROOM on the shared service vestibule (shafts squarified inside)
+    const wcW = washrooms.find((c) => c.key === "wcW") || washrooms[1] || null;
+    const small = boh.filter((c) => !c.freight);                 // janitor, lift control
+    const freight = boh.find((c) => c.freight) || null;
     const mechArea = areaOf(sealed);
-    const mechRoom = mechArea > 0 ? { key: "mech", type: "shaft", name: "Mech / HVAC", wFt: Math.sqrt(mechArea), dFt: Math.sqrt(mechArea), access: "shared", isMech: true } : null;
-    const serviceRooms = boh.concat(mechRoom ? [mechRoom] : []);
-    const pod = packServiceZone(serviceRooms, serviceH, dims);
-    const centerW = Math.max(bankW, pod.width, 18);
-    const psc = centerW / (pod.width || 1);
-    const washH = Hc - sD;
-    const Lw = Math.max(wcM ? wcM.dFt : 0, sW, 11);
-    const Rw = Math.max(wcW ? wcW.dFt : 0, sW, 11);
-    const cx = Lw, totalW = Lw + centerW + Rw, sy0 = lobbyD + carD;
-    let y = 0;
-    if (lobby) bandRow(lobby, y, lobbyD, cx, centerW); y += lobbyD;
-    if (bank) bandRow(bank, y, carD, cx, centerW); y += carD;
-    // place service rooms (scaled to fill centerW); the mech room gets its sealed shafts squarified inside
-    for (const c of pod.placed) {
-      const rx = cx + c.lx * psc, ry = sy0 + c.ly, rw = c.lw * psc, rh = c.lh;
-      if (c.isMech && sealed.length) {
-        squarify(sealed.map((s) => ({ area: s.wFt * s.dFt, cell: s })), rx, ry, rw, rh).forEach((p) => bandRow({ ...p.d.cell, access: "mech", vestId: c.vestId }, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
-      } else bandRow(c, ry, rh, rx, rw);
-    }
-    // one label per service vestibule (the L-shaped freight lobby is one space, drawn as strip + filler — label only the strip)
-    pod.vests.forEach((v, i) => bandRow({ key: "svcVest" + v.id + "_" + i, type: "lobby", name: v.filler ? "" : (v.dedicated ? "Freight lobby" : "Service vest"), access: "floor", vestibule: true, vestId: v.id, dedicated: v.dedicated, filler: v.filler }, sy0 + v.ly, v.lh, cx + v.lx * psc, v.lw * psc));
+
+    const D = Math.max(sD, carD + lobbyD, 15);                    // band depth = the deepest element (stair)
     const stairsLocal = [];
-    if (stairs[0]) stairsLocal.push({ ...stairs[0], lx: 0, ly: 0, lw: Lw, lh: sD });
-    if (wcM) bandRow(wcM, sD, washH, 0, Lw);
-    if (wcW) bandRow(wcW, 0, washH, cx + centerW, Rw);
-    if (stairs[1]) stairsLocal.push({ ...stairs[1], lx: cx + centerW, ly: Hc - sD, lw: Rw, lh: sD });
-    for (let i = 2; i < stairs.length; i++) stairsLocal.push({ ...stairs[i], lx: 0, ly: Hc - sD, lw: Lw, lh: sD });
-    return { placed, L: totalW, D: Hc, corridorY: 0, corridorY1: lobbyD, stairsLocal };
+    let x = 0;
+
+    // 1. Stair A — far-left corner (remote)
+    if (stairs[0]) { stairsLocal.push({ ...stairs[0], lx: x, ly: 0, lw: sW, lh: D }); x += sW; }
+
+    // 2. Washrooms (men + women) — full depth, entry on the front (S) edge with a privacy baffle
+    const wcWidth = (c) => Math.max((c.wFt * c.dFt) / D, 10);
+    if (wcM) { bandRow({ ...wcM, entry: "bottom" }, 0, D, x, wcWidth(wcM)); x += wcWidth(wcM); }
+    if (wcW) { bandRow({ ...wcW, entry: "bottom" }, 0, D, x, wcWidth(wcW)); x += wcWidth(wcW); }
+
+    // 3. Elevator bank (N) + central lobby (S, opens to the floor and fronts the bank)
+    if (bank) bandRow(bank, 0, carD, x, bankW);
+    if (lobby) bandRow(lobby, carD, D - carD, x, bankW);
+    x += bankW;
+
+    // 4. Service block — 2-row so each room reaches a floor edge (no service vestibule):
+    //    S row = HVAC/mech (sealed shafts inside) opening S; N row = janitor + control opening N.
+    const smallD = small.length ? Math.max(7, areaOf(small) / 12) : 0;
+    const mechD = mechArea > 0 ? Math.max(D - smallD, D * 0.5) : 0;
+    const mechW = mechArea > 0 ? Math.max(mechArea / mechD, 10) : 0;
+    if (mechArea > 0) {
+      squarify(sealed.map((s) => ({ area: s.wFt * s.dFt, cell: s })), x, D - mechD, mechW, mechD).forEach((p) => bandRow({ ...p.d.cell, access: "mech" }, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
+      let sx = x; const sw = mechW / Math.max(small.length, 1);
+      for (const c of small) { bandRow({ ...c, access: "edge" }, 0, D - mechD, sx, sw); sx += sw; }
+      x += mechW;
+    } else { let sx = x; for (const c of small) { bandRow({ ...c, access: "edge" }, 0, D, sx, 7); sx += 7; } x += small.length * 7; }
+
+    // freight: car (N) above its dedicated freight lobby (S, opens to the floor)
+    if (freight) {
+      const fcarD = Math.min(freight.dFt, D - 6);
+      bandRow({ ...freight }, 0, fcarD, x, freight.wFt);
+      bandRow({ key: "freightLobby", type: "lobby", name: "Freight lobby", access: "edge", vestibule: true, dedicated: true }, fcarD, D - fcarD, x, freight.wFt);
+      x += freight.wFt;
+    }
+
+    // 5. Stair B — far-right corner (remote); extras continue along the row
+    if (stairs[1]) { stairsLocal.push({ ...stairs[1], lx: x, ly: 0, lw: sW, lh: D }); x += sW; }
+    for (let i = 2; i < stairs.length; i++) { stairsLocal.push({ ...stairs[i], lx: x, ly: 0, lw: sW, lh: D }); x += sW; }
+
+    return { placed, L: x, D, corridorY: D - lobbyD, corridorY1: D, stairsLocal };
   }
 
   // single-loaded (side / end): risers (blind) | [elevators | washrooms] | corridor (active)

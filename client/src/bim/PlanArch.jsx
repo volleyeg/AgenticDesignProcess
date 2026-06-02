@@ -305,14 +305,15 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
       {/* core objects */}
       {cells.filter((c) => inView(c.rect)).map((c, i) => {
         if (c.type === "elevator") return <Elevator key={i} r={c.rect} cars={c.cars} svc={c.svc} fs={c.fs} freight={c.freight} />;
-        if (c.type === "restroom") return <Washroom key={i} r={c.rect} men={c.key === "wcM"} entry={wcEntry(c.rect)} wc={c.wc} lav={c.lav} urinals={c.urinals} />;
+        if (c.type === "restroom") return <Washroom key={i} r={c.rect} men={c.key === "wcM"} entry={c.entry || wcEntry(c.rect)} wc={c.wc} lav={c.lav} urinals={c.urinals} />;
         return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={c.name} />;
       })}
       {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={perimeterEdge(s.rect)} />)}
-      {/* service rooms door into their vestibule (shared or dedicated); mech cluster doors to the floor */}
+      {/* service rooms door into their vestibule (shared or dedicated); landscape edge-rooms door to the floor */}
       {cells.filter((c) => (c.access === "shared" || c.access === "dedicated") && inView(c.rect)).map((c, i) => {
         const v = vestFor(c); const e = v ? edgeToward(c.rect, v) : null; return e ? <Door key={"dv" + i} edge={e} r={c.rect} /> : null;
       })}
+      {cells.filter((c) => c.access === "edge" && c.type !== "lobby" && inView(c.rect)).map((c, i) => <Door key={"de" + i} edge={perimeterEdge(c.rect)} r={c.rect} />)}
       {Object.keys(mechByVest).map((k, i) => {
         const mr = bbox(mechByVest[k]); const v = vestById[k]; const e = v ? edgeToward(mr, v) : perimeterEdge(mr);
         return inView(mr) ? <Door key={"dm" + i} edge={e} r={mr} /> : null;

@@ -8,7 +8,7 @@ export const CORE_DIMS = {
   liftPax: { w: 7, d: 7 },        // passenger car clear+structure
   liftService: { w: 8, d: 10 },   // freight / fire-service car
   lobbyDepthFt: 10,               // min elevator lobby depth in front of a bank
-  stair: { w: 10, d: 24 },        // egress stair run (incl landings)
+  stair: { w: 10, d: 15 },        // switchback egress stair: two ~10ft runs + landing, ~9-10 wide
   vestibule: { w: 8, d: 6 },      // smokeproof vestibule at stair (high-rise)
   pressShaft: { w: 3, d: 4 },     // stair pressurization shaft (high-rise)
   control: { w: 4, d: 6 },        // MRL elevator control closet
