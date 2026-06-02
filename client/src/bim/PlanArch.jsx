@@ -69,8 +69,8 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   };
 
   // elevator bank -> individual car boxes with the shaft 'X'
-  const Elevator = ({ r, cars }) => {
-    const n = Math.max(1, cars || 1);
+  const Elevator = ({ r, cars, svc }) => {
+    const pax = Math.max(1, cars || 1), nsvc = Math.max(0, svc || 0), n = pax + nsvc;
     const px = X(r.x) + wall, py = Y(r.y) + wall, pw = S(r.w) - wall * 2, ph = S(r.h) - wall * 2;
     const horiz = pw >= ph; const cw = horiz ? pw / n : pw, ch = horiz ? ph : ph / n;
     return (
@@ -78,11 +78,13 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
         <rect x={X(r.x)} y={Y(r.y)} width={S(r.w)} height={S(r.h)} fill={POCHE} />
         {Array.from({ length: n }).map((_, i) => {
           const bx = horiz ? px + i * cw : px, by = horiz ? py : py + i * ch;
+          const freight = i >= pax;
           return (
             <g key={i}>
-              <rect x={bx + 0.6} y={by + 0.6} width={cw - 1.2} height={ch - 1.2} fill={TINT.elevator} stroke={INK} strokeWidth="0.5" />
+              <rect x={bx + 0.6} y={by + 0.6} width={cw - 1.2} height={ch - 1.2} fill={freight ? "#e7e3d8" : TINT.elevator} stroke={INK} strokeWidth="0.5" />
               <line x1={bx + 1.5} y1={by + 1.5} x2={bx + cw - 1.5} y2={by + ch - 1.5} stroke="#8b9097" strokeWidth="0.4" />
               <line x1={bx + cw - 1.5} y1={by + 1.5} x2={bx + 1.5} y2={by + ch - 1.5} stroke="#8b9097" strokeWidth="0.4" />
+              {freight && Math.min(cw, ch) > 12 && <text x={bx + cw / 2} y={by + ch / 2} fill={INK} fontSize="6" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "ui-monospace,monospace" }}>FRT</text>}
             </g>
           );
         })}
@@ -90,37 +92,48 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     );
   };
 
-  // stair: two flights with a mid-landing (switchback) + a fire door at the entry edge
+  // stair: entry landing at the door -> two flights with a mid-landing (switchback) -> up arrow
   const Stair = ({ r, doorEdge }) => {
     const px = X(r.x), py = Y(r.y), pw = S(r.w), ph = S(r.h);
     const ix = px + wall, iy = py + wall, iw = pw - wall * 2, ih = ph - wall * 2;
-    const runV = ih >= iw;                         // flights run along the long axis
-    const flights = [];
-    // two parallel flights separated by a center stringer; landing at the far end
-    const landing = runV ? ih * 0.18 : iw * 0.18;
-    if (runV) {
-      const half = iw / 2, treads = Math.max(5, Math.round((ih - landing) / 2.2));
-      for (let f = 0; f < 2; f++) {
-        const fx = ix + f * half;
-        for (let i = 1; i < treads; i++) { const ty = iy + landing + ((ih - landing) * i) / treads; flights.push(<line key={f + "-" + i} x1={fx + 0.5} y1={ty} x2={fx + half - 0.5} y2={ty} stroke="#7d7468" strokeWidth="0.5" />); }
-      }
-      flights.push(<line key="str" x1={ix + half} y1={iy + landing} x2={ix + half} y2={iy + ih} stroke={INK} strokeWidth="0.6" />);
-      flights.push(<line key="ar" x1={ix + half * 0.5} y1={iy + ih - 2} x2={ix + half * 0.5} y2={iy + landing + 2} stroke={INK} strokeWidth="0.8" markerEnd="url(#arr)" />);
+    const edge = doorEdge || (ih >= iw ? "bottom" : "left");
+    const vert = edge === "bottom" || edge === "top";   // flights run vertically
+    const entryLand = Math.min(S(4), (vert ? ih : iw) * 0.22);  // landing at the entry door
+    const midLand = Math.min(S(3.5), (vert ? ih : iw) * 0.16);  // half-landing at the turn
+    const L = [];
+    const landRect = [];
+    if (vert) {
+      const half = iw / 2;
+      const entryBottom = edge !== "top";
+      const eLandY = entryBottom ? iy + ih - entryLand : iy;        // entry landing band
+      const mLandY = entryBottom ? iy : iy + ih - midLand;          // mid-landing band (far end)
+      const runY0 = entryBottom ? iy + midLand : iy + entryLand;
+      const runH = ih - entryLand - midLand;
+      const treads = Math.max(4, Math.round(runH / 4));
+      for (let f = 0; f < 2; f++) { const fx = ix + f * half; for (let i = 1; i < treads; i++) { const ty = runY0 + (runH * i) / treads; L.push(<line key={f + "t" + i} x1={fx + 0.5} y1={ty} x2={fx + half - 0.5} y2={ty} stroke="#7d7468" strokeWidth="0.5" />); } }
+      L.push(<line key="str" x1={ix + half} y1={runY0} x2={ix + half} y2={runY0 + runH} stroke={INK} strokeWidth="0.6" />);
+      L.push(<line key="ar" x1={ix + half * 0.5} y1={entryBottom ? runY0 + runH - 2 : runY0 + 2} x2={ix + half * 0.5} y2={entryBottom ? runY0 + 2 : runY0 + runH - 2} stroke={INK} strokeWidth="0.8" markerEnd="url(#arr)" />);
+      landRect.push(<rect key="el" x={ix} y={eLandY} width={iw} height={entryLand} fill={TINT.stair} stroke="none" />);
+      landRect.push(<line key="ell" x1={ix} y1={entryBottom ? eLandY : eLandY + entryLand} x2={ix + iw} y2={entryBottom ? eLandY : eLandY + entryLand} stroke={INK} strokeWidth="0.5" strokeDasharray="2 2" />);
     } else {
-      const half = ih / 2, treads = Math.max(5, Math.round((iw - landing) / 2.2));
-      for (let f = 0; f < 2; f++) {
-        const fy = iy + f * half;
-        for (let i = 1; i < treads; i++) { const tx = ix + landing + ((iw - landing) * i) / treads; flights.push(<line key={f + "-" + i} x1={tx} y1={fy + 0.5} x2={tx} y2={fy + half - 0.5} stroke="#7d7468" strokeWidth="0.5" />); }
-      }
-      flights.push(<line key="str" x1={ix + landing} y1={iy + half} x2={ix + iw} y2={iy + half} stroke={INK} strokeWidth="0.6" />);
-      flights.push(<line key="ar" x1={ix + iw - 2} y1={iy + half * 0.5} x2={ix + landing + 2} y2={iy + half * 0.5} stroke={INK} strokeWidth="0.8" markerEnd="url(#arr)" />);
+      const half = ih / 2;
+      const entryLeft = edge !== "right";
+      const runX0 = entryLeft ? ix + entryLand : ix + midLand;
+      const runW = iw - entryLand - midLand;
+      const treads = Math.max(4, Math.round(runW / 4));
+      for (let f = 0; f < 2; f++) { const fy = iy + f * half; for (let i = 1; i < treads; i++) { const tx = runX0 + (runW * i) / treads; L.push(<line key={f + "t" + i} x1={tx} y1={fy + 0.5} x2={tx} y2={fy + half - 0.5} stroke="#7d7468" strokeWidth="0.5" />); } }
+      L.push(<line key="str" x1={runX0} y1={iy + half} x2={runX0 + runW} y2={iy + half} stroke={INK} strokeWidth="0.6" />);
+      L.push(<line key="ar" x1={entryLeft ? runX0 + 2 : runX0 + runW - 2} y1={iy + half * 0.5} x2={entryLeft ? runX0 + runW - 2 : runX0 + 2} y2={iy + half * 0.5} stroke={INK} strokeWidth="0.8" markerEnd="url(#arr)" />);
+      const eLandX = entryLeft ? ix : ix + iw - entryLand;
+      landRect.push(<line key="ell" x1={entryLeft ? eLandX + entryLand : eLandX} y1={iy} x2={entryLeft ? eLandX + entryLand : eLandX} y2={iy + ih} stroke={INK} strokeWidth="0.5" strokeDasharray="2 2" />);
     }
     return (
       <g>
         <rect x={px} y={py} width={pw} height={ph} fill={POCHE} />
         <rect x={ix} y={iy} width={Math.max(iw, 0)} height={Math.max(ih, 0)} fill={TINT.stair} />
-        {flights}
-        {doorEdge && <Door edge={doorEdge} r={r} into="in" />}
+        {landRect}
+        {L}
+        {doorEdge && <Door edge={doorEdge} r={r} />}
       </g>
     );
   };
@@ -152,26 +165,54 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   };
 
   // washroom: room + fixture symbols (stalls along back wall, lavs along front)
-  const Washroom = ({ r, men }) => {
+  // washroom: stalls line the wall OPPOSITE the entry (doors face the aisle), lavs + urinals on a side
+  // wall, and a clear circulation aisle along the entry — the entry door never opens into a stall.
+  const Washroom = ({ r, men, entry }) => {
     const px = X(r.x) + wall, py = Y(r.y) + wall, pw = S(r.w) - wall * 2, ph = S(r.h) - wall * 2;
-    const stallW = S(3), depth = S(5), nStall = Math.max(1, Math.floor(pw / stallW));
-    const fixtures = [];
-    for (let i = 0; i < nStall; i++) { // WC stalls along the top (back) wall
-      const sx = px + i * (pw / nStall);
-      fixtures.push(<rect key={"s" + i} x={sx + 1} y={py + 1} width={pw / nStall - 2} height={depth - 1} fill="none" stroke={INK} strokeWidth="0.5" />);
-      fixtures.push(<rect key={"w" + i} x={sx + (pw / nStall) / 2 - 1.5} y={py + 2} width={3} height={4} rx={1.5} fill="none" stroke={INK} strokeWidth="0.5" />);
+    const e = entry || (ph >= pw ? "left" : "bottom");
+    const F = []; const sd = S(5); const run = S(3); const acc = S(5);
+    const vertical = e === "left" || e === "right";
+    if (vertical) {
+      const stallsRight = e !== "right";                 // stalls on the wall opposite the entry
+      const sx = stallsRight ? px + pw - sd : px;
+      const aisleEdge = stallsRight ? sx : sx + sd;      // stall-door side faces the aisle
+      let yy = py, idx = 0;
+      while (yy + run <= py + ph - 1) {
+        const h = idx === 0 ? acc : run; if (yy + h > py + ph) break;
+        F.push(<rect key={"s" + idx} x={sx} y={yy + 0.5} width={sd} height={h - 1} fill="none" stroke={INK} strokeWidth="0.5" />);
+        F.push(<rect key={"t" + idx} x={stallsRight ? sx + sd - 4.5 : sx + 1.5} y={yy + h / 2 - 2} width={3} height={4} rx={1.3} fill="none" stroke={INK} strokeWidth="0.45" />);
+        F.push(<line key={"sd" + idx} x1={aisleEdge} y1={yy + 1} x2={stallsRight ? aisleEdge - 3.5 : aisleEdge + 3.5} y2={yy + h * 0.45} stroke={INK} strokeWidth="0.5" />);
+        if (idx === 0) F.push(<circle key="acc" cx={sx + sd / 2} cy={yy + h / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
+        yy += h; idx++;
+      }
+      const lavX0 = stallsRight ? px + 1.5 : px + sd + S(2);   // lavs along the top wall over the aisle
+      const lavN = Math.max(1, Math.floor((pw - sd - S(2)) / S(2.2)));
+      for (let i = 0; i < lavN; i++) F.push(<rect key={"l" + i} x={lavX0 + i * S(2.2)} y={py + 1} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />);
+      if (men) { const uN = Math.max(1, Math.floor((pw - sd - S(2)) / S(1.8))); for (let i = 0; i < uN; i++) F.push(<rect key={"u" + i} x={lavX0 + i * S(1.8)} y={py + ph - 4} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />); }
+    } else {
+      const stallsTop = e !== "top";
+      const sy = stallsTop ? py : py + ph - sd;
+      const aisleEdge = stallsTop ? sy + sd : sy;
+      let xx = px, idx = 0;
+      while (xx + run <= px + pw - 1) {
+        const w = idx === 0 ? acc : run; if (xx + w > px + pw) break;
+        F.push(<rect key={"s" + idx} x={xx + 0.5} y={sy} width={w - 1} height={sd} fill="none" stroke={INK} strokeWidth="0.5" />);
+        F.push(<rect key={"t" + idx} x={xx + w / 2 - 1.5} y={stallsTop ? sy + sd - 4.5 : sy + 1.5} width={3} height={4} rx={1.3} fill="none" stroke={INK} strokeWidth="0.45" />);
+        F.push(<line key={"sd" + idx} x1={xx + 1} y1={aisleEdge} x2={xx + w * 0.45} y2={stallsTop ? aisleEdge + 3.5 : aisleEdge - 3.5} stroke={INK} strokeWidth="0.5" />);
+        if (idx === 0) F.push(<circle key="acc" cx={xx + w / 2} cy={sy + sd / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
+        xx += w; idx++;
+      }
+      const lavY0 = stallsTop ? py + sd + S(2) : py + 1;
+      const lavN = Math.max(1, Math.floor((pw - S(2)) / S(2.2)));
+      for (let i = 0; i < lavN; i++) F.push(<rect key={"l" + i} x={px + 1 + i * S(2.2)} y={lavY0} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />);
     }
-    const lavN = Math.max(1, Math.floor(pw / S(2.5)));
-    for (let i = 0; i < lavN; i++) { // lavs along the bottom (front) wall
-      const lx = px + i * (pw / lavN) + (pw / lavN) / 2;
-      fixtures.push(<circle key={"l" + i} cx={lx} cy={py + ph - 3} r={1.6} fill="none" stroke={INK} strokeWidth="0.5" />);
-    }
+    const big = pw > 24 && ph > 18;
     return (
       <g>
         <rect x={X(r.x)} y={Y(r.y)} width={S(r.w)} height={S(r.h)} fill={POCHE} />
         <rect x={px} y={py} width={pw} height={ph} fill={TINT.restroom} />
-        {fixtures}
-        {pw > 26 && <text x={px + pw / 2} y={py + ph / 2 + 1} fill={INK} fontSize="7" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{men ? "MEN" : "WOMEN"}</text>}
+        {F}
+        {big && <text x={vertical ? (e === "right" ? px + pw - sd / 2 : px + sd / 2) : px + pw / 2} y={vertical ? py + ph / 2 : (e === "top" ? py + ph - 6 : py + 8)} fill={INK} fontSize="6.5" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{men ? "MEN" : "WOMEN"}</text>}
       </g>
     );
   };
@@ -211,8 +252,8 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
       ))}
       {/* core objects */}
       {cells.filter((c) => inView(c.rect)).map((c, i) => {
-        if (c.type === "elevator") return <Elevator key={i} r={c.rect} cars={c.cars} />;
-        if (c.type === "restroom") return <Washroom key={i} r={c.rect} men={c.key === "wcM"} />;
+        if (c.type === "elevator") return <Elevator key={i} r={c.rect} cars={c.cars} svc={c.svc} />;
+        if (c.type === "restroom") return <Washroom key={i} r={c.rect} men={c.key === "wcM"} entry={perimeterEdge(c.rect)} />;
         const label = c.rect.w * scale > 30 ? c.name : "";
         return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={label} />;
       })}

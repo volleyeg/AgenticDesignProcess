@@ -53,6 +53,14 @@ export function generateShell({
   let stairCount = v(pack, "stair.base");
   if (occLoad > v(pack, "stair.occFor4")) stairCount = 4; else if (occLoad > v(pack, "stair.occFor3")) stairCount = 3;
   const sw = v(pack, "stair.widthFt"), sd = v(pack, "stair.depthFt");
+  // egress capacity (IBC 1005.3.1): required width = occupants x per-occupant factor
+  // (0.2 in sprinklered, 0.3 in not). A stair carries ~ its clear width / factor occupants.
+  const egressPerOcc = sprinklered ? 0.2 : 0.3;
+  const stairClearIn = Math.max(44, sw * 12 - 26);          // clear run width inside the shaft
+  const capacityPerStair = Math.floor(stairClearIn / egressPerOcc);
+  while (stairCount * capacityPerStair < occLoad && stairCount < 8) stairCount++;
+  const egressCapacity = { perStair: capacityPerStair, stairs: stairCount, requiredOcc: occLoad, ok: stairCount * capacityPerStair >= occLoad };
+  if (stairCount > (occLoad > 1000 ? 4 : occLoad > 500 ? 3 : 2)) flags.push(`extra stair added for egress capacity (load ${occLoad} needs ${Math.ceil(occLoad / capacityPerStair)} stairs of ${sw} ft)`);
 
   // ---- restrooms (code fixture rules) ----
   const perSex = occLoad / 2;
@@ -84,7 +92,7 @@ export function generateShell({
     elevators,
     restrooms: { wcPerSex, lavPerSex },
     core, trackedNotDrawn: tracked,
-    egress: { stairsRequired: stairCount, separationRequiredFt: core.egress.requiredFt, separationActualFt: core.egress.actualFt, ok: core.egress.ok },
+    egress: { stairsRequired: stairCount, capacity: egressCapacity, separationRequiredFt: core.egress.requiredFt, separationActualFt: core.egress.actualFt, ok: core.egress.ok },
     efficiency: round(efficiency * 1000) / 10,
     flags,
   };
