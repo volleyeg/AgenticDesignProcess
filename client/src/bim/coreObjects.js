@@ -16,6 +16,12 @@ export const CORE_DIMS = {
   lactation: { w: 7, d: 8 },      // lockable, not a bathroom
   smokeLobby: { w: 10, d: 8 },    // fire-rated elevator lobby (high-rise)
   refuge: { w: 6, d: 5 },         // area of refuge at stair (high-rise)
+  // MEP shafts — real cross-sections (image 4: data 1000x500, elec 1500x800, sprinkler 500x500, mm->ft)
+  shafts: {
+    mechSupply: { w: 4, d: 4 }, mechExhaust: { w: 4, d: 4 },   // air intake / exhaust ducts (HVAC room)
+    electricalRiser: { w: 5, d: 2.6 }, dataRiser: { w: 3.3, d: 1.6 },
+    plumbingRiser: { w: 3, d: 2 }, fireRiser: { w: 1.6, d: 1.6 }, pressuriz: { w: 3.3, d: 1.6 },
+  },
   // washroom fixtures
   wcStall: { w: 3, d: 5 }, accStall: { w: 5, d: 5 }, urinal: { w: 1.5, d: 2 }, lav: { w: 2.5, d: 2 }, aisleFt: 5,
   wallFt: 0.67,                   // interior fire-rated core wall (~8 in)
@@ -85,16 +91,16 @@ export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, s
   if (T.janitor) cells.push({ key: "janitor", type: "shaft", name: "Janitor / sink", wFt: D.janitor.w, dFt: D.janitor.d, group: "boh", face: "blind", access: "shared" });
   if (T.drinkingFountain) tracked.push("drinking fountain (corridor niche)");
 
-  // ---- MEP shafts. Electrical + telecom need per-floor access (NEC); duct/plumbing/fire are sealed risers. ----
+  // ---- MEP shafts at REAL cross-sections (image 4), scaled mildly with floor size + height.
+  // Sealed risers (air/plumb/fire/press) sit in the HVAC room; electrical + telecom need access (NEC). ----
   const shaftKeys = ["mechSupply", "mechExhaust", "electricalRiser", "dataRiser", "plumbingRiser", "fireRiser"];
   const names = { mechSupply: "Supply air", mechExhaust: "Exhaust air", electricalRiser: "Elec riser", dataRiser: "Data riser", plumbingRiser: "Plumb riser", fireRiser: "Fire riser", pressuriz: "Press riser" };
-  const accessByKey = { electricalRiser: "shared", dataRiser: "shared" };  // others sealed
+  const accessByKey = { electricalRiser: "shared", dataRiser: "shared" };  // others sealed -> HVAC room
+  const ds = Math.max(0.85, Math.min(1.9, 0.85 + (floorOccupants || 150) / 1400 + (highRise ? 0.2 : 0)));  // mild size scale
   const active = shaftKeys.filter((k) => T[k]);
-  const shareSum = active.reduce((s, k) => s + MEP_SHARES[k], 0) || 1;
   for (const k of active) {
-    const a = shaftAreaFt2 * (MEP_SHARES[k] / shareSum);
-    const w = Math.min(Math.max(Math.sqrt(a), 2), 18), d = Math.max(a / w, 2);
-    cells.push({ key: k, type: "shaft", name: names[k], wFt: Math.round(w * 10) / 10, dFt: Math.round(d * 10) / 10, group: accessByKey[k] ? "boh" : "mep", face: "blind", access: accessByKey[k] || "none" });
+    const s = D.shafts[k] || { w: 3, d: 2 };
+    cells.push({ key: k, type: "shaft", name: names[k], wFt: Math.round(s.w * ds * 10) / 10, dFt: Math.round(s.d * ds * 10) / 10, group: accessByKey[k] ? "boh" : "mep", face: "blind", access: accessByKey[k] || "none" });
   }
   // service vestibules are created by the layout (it decides how many small pods to wrap the rooms around)
 
