@@ -11,6 +11,7 @@ import { buildBimModel } from "./bim/buildFromConstraints.js";
 import { writeIFC } from "./bim/ifc.js";
 import Viewer3D from "./bim/Viewer3D.jsx";
 import Plan2D from "./bim/Plan2D.jsx";
+import PlanArch from "./bim/PlanArch.jsx";
 
 const api = (path, body) =>
   fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
@@ -288,7 +289,18 @@ export default function App() {
           {shell && shellModel && (
             <>
               <div style={{ padding: 6, background: "var(--panel)", borderRadius: 6 }}>
-                {shellView === "2d" ? <Plan2D model={shellModel} labels={false} /> : <Viewer3D model={shellModel} />}
+                {shellView === "3d" ? <Viewer3D model={shellModel} /> : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
+                    <div style={{ flex: "1 1 380px", minWidth: 0 }}>
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)", marginBottom: 4 }}>TYPICAL FLOOR PLAN</div>
+                      <PlanArch shell={shell} region="floor" maxW={560} />
+                    </div>
+                    <div style={{ flex: "1 1 280px", minWidth: 0 }}>
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)", marginBottom: 4 }}>CORE — ENLARGED</div>
+                      <PlanArch shell={shell} region="core" maxW={420} />
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="row" style={{ flexWrap: "wrap", gap: "6px 14px", marginTop: 10 }}>
                 {(() => {

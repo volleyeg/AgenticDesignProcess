@@ -18,13 +18,13 @@ for (let i = 0; i < N; i++) {
   catch (e) { failures++; if (fmsgs.length < 12) fmsgs.push(`THREW ${program}/${coreType} ${stories}st: ${e.message}`); continue; }
   const fail = (m) => { failures++; if (fmsgs.length < 12) fmsgs.push(`${m} [${program}/${coreType}/${corePosition} ${s.W}x${s.H} ${stories}st]`); };
 
-  // 1. core grammar must be valid (the whole point of Layer 1)
-  if (!s.core.valid) { grammarBad++; fail("grammar invalid: " + s.core.violations.join("; ")); }
-  // 2. all core components within the floor
-  for (const c of s.core.components) if (!within(c.rect, s.W, s.H)) fail(`${c.name} off-plate`);
-  // 3. stairs within floor + egress met or flagged
-  for (const r of s.core.stairs) if (!within(r, s.W, s.H)) fail("stair off-plate");
-  if (!s.egress.ok && !s.flags.some((f) => f.includes("remoteness") || f.includes("separation"))) fail("egress short not flagged");
+  // 1. core grammar must be valid (overlaps / bank-fronting); oversize is a flagged condition, not a bug
+  if (!s.core.grammarOk) { grammarBad++; fail("grammar invalid: " + s.core.violations.join("; ")); }
+  // 2. if the core fits, nothing off-plate; if not, it must be flagged
+  if (s.core.fits) { for (const c of [...s.core.components, ...s.core.stairCells]) if (!within(c.rect, s.W, s.H)) { fail(`${c.name} off-plate but fits`); break; } }
+  else if (!s.flags.some((f) => f.includes("exceeds"))) fail("oversize not flagged");
+  // 3. egress met or flagged
+  if (!s.egress.ok && !s.flags.some((f) => f.includes("remoteness"))) fail("egress short not flagged");
   // 4. elevators sane
   if (!(s.elevators.passengerCars >= 1) || !Number.isFinite(s.elevators.elevAreaFt2)) fail("bad elevators");
   // 5. finite metrics

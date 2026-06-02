@@ -8,14 +8,15 @@
 import { NORTH_AMERICA, v } from "./rulepacks/northAmerica.js";
 import { getProfile } from "./programProfiles.js";
 import { sizeElevators } from "./elevatoring.js";
-import { assembleCore } from "./coreAssembly.js";
+import { buildCoreObjects, CORE_TOGGLES } from "./coreObjects.js";
+import { packCore } from "./corePacker.js";
 
 const round = Math.round, max = Math.max, ceil = Math.ceil, sqrt = Math.sqrt;
 const fixtures = (n, first, fr, tr) => (n <= first ? max(1, ceil(n / fr)) : ceil(first / fr) + ceil((n - first) / tr));
 
 export function generateShell({
   areaFt2 = 20000, aspect = 1.5, coreType = "central", corePosition = "center",
-  stories = 10, program = "office", sprinklered = true, pack = NORTH_AMERICA, floorToFloorFt,
+  stories = 10, program = "office", sprinklered = true, pack = NORTH_AMERICA, floorToFloorFt, toggles = CORE_TOGGLES,
 } = {}) {
   const profile = getProfile(program);
   const f2f = floorToFloorFt || profile.floorToFloorFt;
@@ -61,23 +62,16 @@ export function generateShell({
 
   // ---- shafts (program MEP, grows with height) ----
   const shaftAreaFt2 = area * (profile.shaftPctBase + profile.shaftPctPerStory * stories);
-  const closet = v(pack, "shaft.closetArea");
-  const lobbyAreaFt2 = max(elevators.passengerCars * elevators.paxShaftFt * v(pack, "elev.lobbyDepthFt") * 0.5, 120);
 
-  // ---- LAYER 1: assemble the core with the placement grammar ----
-  const core = assembleCore({
-    W, H, coreType, corePosition,
-    elevAreaFt2: elevators.elevAreaFt2, paxShaftFt: elevators.paxShaftFt,
-    stairCount, stairWidthFt: sw, stairDepthFt: sd,
-    restroomAreaFt2, shaftAreaFt2, lobbyAreaFt2, idfAreaFt2: closet, janitorAreaFt2: closet, lactationAreaFt2: 60,
-    sprinklered, highRise, diagonal,
-  });
+  // ---- LAYER 1: pack the core from real toggleable objects (minimum-area, walled, grammar-checked) ----
+  const { cells, tracked } = buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, shaftAreaFt2, highRise, toggles });
+  const core = packCore({ W, H, coreType, corePosition, cells, sprinklered, highRise, diagonal });
   flags.push(...core.flags);
-  if (!core.valid) flags.push(...core.violations.map((x) => "grammar: " + x));
+  if (!core.grammarOk) flags.push(...core.violations.map((x) => "grammar: " + x));
 
   // ---- efficiency ----
   const efficiency = (area - core.areaFt2) / area;
-  const effLo = v(pack, "efficiency.targetLo"), effHi = v(pack, "efficiency.targetHi");
+  const effLo = v(pack, "efficiency.targetLo");
   if (efficiency < effLo) flags.push(`efficiency ${(efficiency * 100).toFixed(0)}% below ${effLo * 100}% (core heavy for this floor)`);
 
   return {
@@ -89,7 +83,7 @@ export function generateShell({
     facade,
     elevators,
     restrooms: { wcPerSex, lavPerSex },
-    core,
+    core, trackedNotDrawn: tracked,
     egress: { stairsRequired: stairCount, separationRequiredFt: core.egress.requiredFt, separationActualFt: core.egress.actualFt, ok: core.egress.ok },
     efficiency: round(efficiency * 1000) / 10,
     flags,
