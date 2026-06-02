@@ -64,7 +64,7 @@ export function generateShell({
   const shaftAreaFt2 = area * (profile.shaftPctBase + profile.shaftPctPerStory * stories);
 
   // ---- LAYER 1: pack the core from real toggleable objects (minimum-area, walled, grammar-checked) ----
-  const { cells, tracked } = buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, shaftAreaFt2, highRise, toggles });
+  const { cells, tracked } = buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, shaftAreaFt2, highRise, floorOccupants: occLoad, toggles });
   const core = packCore({ W, H, coreType, corePosition, cells, sprinklered, highRise, diagonal });
   flags.push(...core.flags);
   if (!core.grammarOk) flags.push(...core.violations.map((x) => "grammar: " + x));

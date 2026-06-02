@@ -18,6 +18,11 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   const cells = core.components || [];
   const stairs = core.stairCells || [];
   const corridor = cells.find((c) => c.key === "lobby")?.rect || cells.find((c) => c.type === "lobby")?.rect || null;
+  const _all = [...cells, ...stairs].map((c) => c.rect).filter(Boolean);
+  const coreBox = _all.length
+    ? { x: Math.min(..._all.map((r) => r.x)), y: Math.min(..._all.map((r) => r.y)), w: 0, h: 0 }
+    : { x: 0, y: 0, w: 0, h: 0 };
+  if (_all.length) { coreBox.w = Math.max(..._all.map((r) => r.x + r.w)) - coreBox.x; coreBox.h = Math.max(..._all.map((r) => r.y + r.h)) - coreBox.y; }
 
   // view region
   let rx, ry, rw, rh, pad;
@@ -203,11 +208,14 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
         return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={label} />;
       })}
       {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={corridor ? edgeToward(s.rect, corridor) : null} />)}
-      {/* washrooms open OUT to the floor (never into the elevator lobby): door on the edge away from the lobby */}
-      {corridor && cells.filter((c) => c.type === "restroom" && inView(c.rect)).map((c, i) => {
-        const lobbyEdge = edgeToward(c.rect, corridor);
-        const floorEdge = lobbyEdge === "top" ? "bottom" : lobbyEdge === "bottom" ? "top" : lobbyEdge === "left" ? "right" : lobbyEdge === "right" ? "left" : "bottom";
-        return <Door key={"d" + i} edge={floorEdge} r={c.rect} />;
+      {/* washrooms open OUT to the floor: door on whichever washroom edge lies on the core's outer boundary */}
+      {cells.filter((c) => c.type === "restroom" && inView(c.rect)).map((c, i) => {
+        const b = coreBox, r = c.rect; let e = "bottom";
+        if (Math.abs(r.y - b.y) < 1.2) e = "top";
+        else if (Math.abs((r.y + r.h) - (b.y + b.h)) < 1.2) e = "bottom";
+        else if (Math.abs(r.x - b.x) < 1.2) e = "left";
+        else if (Math.abs((r.x + r.w) - (b.x + b.w)) < 1.2) e = "right";
+        return <Door key={"d" + i} edge={e} r={r} />;
       })}
     </svg>
   );

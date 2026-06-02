@@ -45,7 +45,7 @@ function washroomDims(wcPerSex, lavPerSex, men, D = CORE_DIMS) {
 
 // build the list of cells to pack from the building's requirements + toggles
 export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, shaftAreaFt2, highRise,
-  dims = CORE_DIMS, toggles = CORE_TOGGLES }) {
+  floorOccupants = 0, dims = CORE_DIMS, toggles = CORE_TOGGLES }) {
   const D = dims, T = toggles, cells = [], tracked = [];
 
   // ---- vertical transportation ----
@@ -55,11 +55,14 @@ export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, s
     const bankD = Math.max(D.liftPax.d, svc ? D.liftService.d : 0);
     cells.push({ key: "liftBank", type: "elevator", name: `${pax} lifts${svc ? ` +${svc} svc` : ""}`, wFt: bankW, dFt: bankD, group: "vt", face: "front", rows: 1, cars: pax, svc });
     // ONE enclosed elevator lobby (in a sprinklered building it is itself the smoke-protected lobby).
-    // High-rise fire-service-access lobby (IBC 3007.6): min 150 sf, no dimension < 8 ft — but still one box.
+    // Size it by the occupant-evacuation rule: >= 25% of the floor occupant load at 3 sf/person
+    // (IBC 3008.6.2), with the fire-service-access floor of 150 sf / no dimension < 8 ft (IBC 3007.6.4).
     if (T.lobby) {
-      let lobW = bankW, lobD = D.lobbyDepthFt;
-      if (highRise) { lobD = Math.max(lobD, 8); if (lobW * lobD < 150) lobW = Math.max(lobW, Math.ceil(150 / lobD)); }
-      cells.push({ key: "lobby", type: "lobby", name: highRise ? "Elevator lobby (FSAE)" : "Elevator lobby", wFt: lobW, dFt: lobD, group: "vt", face: "active", rated: highRise });
+      const oeeArea = 0.25 * floorOccupants * 3;
+      const minArea = highRise ? Math.max(150, oeeArea) : Math.max(oeeArea, bankW * D.lobbyDepthFt);
+      let lobW = bankW;
+      let lobD = Math.max(D.lobbyDepthFt, highRise ? 8 : 0, minArea / lobW);
+      cells.push({ key: "lobby", type: "lobby", name: highRise ? "Elevator lobby (FSAE)" : "Elevator lobby", wFt: lobW, dFt: Math.round(lobD * 10) / 10, group: "vt", face: "active", rated: highRise });
     }
     if (T.elevatorControl) cells.push({ key: "control", type: "shaft", name: "Lift control", wFt: D.control.w, dFt: D.control.d, group: "vt", face: "blind" });
   }

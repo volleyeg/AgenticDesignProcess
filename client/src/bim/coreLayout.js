@@ -55,21 +55,19 @@ function layoutBands({ bank, lobby, smoke, washrooms, risers, support, stairs, d
 
   let y = 0;
   if (doubleLoaded) {
-    // elevators -> ELEVATOR LOBBY (one box, smoke-protected) -> accessed rooms (open to floor) -> blind risers
-    if (bank) { bandRow(bank, y, carD, 0, L); y += carD; }
+    // ELEVATOR LOBBY (outer face, opens to floor) -> elevators (open into lobby) -> risers (interior, blind)
+    // -> washrooms + janitor + lactation (far outer face, open OUT to the floor, never into a core room)
     const corridorY = y; if (lobby) { bandRow(lobby, y, lobby.dFt, 0, L); y += lobby.dFt; }
     const corridorY1 = y;
-    // below the spine: a FRONT row of rooms people enter (washrooms, janitor, lactation) that touch the
-    // corridor, filled out to the core width with the largest risers; remaining risers in a blind back row.
-    const accessed = washrooms.concat(support.filter((c) => c.key === "janitor" || c.key === "lactation"));
-    const pool = risers.concat(support.filter((c) => c.key !== "janitor" && c.key !== "lactation")).sort((a, b) => b.wFt * b.dFt - a.wFt * a.dFt);
-    const targetD = 13, front = [...accessed];
-    let fArea = front.reduce((s, c) => s + c.wFt * c.dFt, 0);
-    while (fArea < L * targetD && pool.length) { const it = pool.shift(); front.push(it); fArea += it.wFt * it.dFt; }
-    const fD = fArea / L;
-    let fx = 0; for (const c of front) { const cw = (c.wFt * c.dFt) / fD; bandRow(c, y, fD, fx, cw); fx += cw; }
-    y += fD;
-    if (pool.length) { const bD = pool.reduce((s, c) => s + c.wFt * c.dFt, 0) / L; squarify(pool.map((c) => ({ area: c.wFt * c.dFt, cell: c })), 0, y, L, bD).forEach((p) => bandRow(p.d.cell, p.rect.y, p.rect.h, p.rect.x, p.rect.w)); y += bD; }
+    if (bank) { bandRow(bank, y, carD, 0, L); y += carD; }
+    const interior = risers.concat(support);
+    const riserD = interior.length ? areaOf(interior) / L : 0;
+    if (interior.length) squarify(interior.map((c) => ({ area: c.wFt * c.dFt, cell: c })), 0, y, L, riserD).forEach((p) => bandRow(p.d.cell, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
+    y += riserD;
+    const accessed = washrooms.slice();
+    const accD = accessed.length ? areaOf(accessed) / L : 0;
+    let ax = 0; for (const c of accessed) { const cw = (c.wFt * c.dFt) / accD; bandRow(c, y, accD, ax, cw); ax += cw; }
+    y += accD;
     return { placed, L, D: y, corridorY, corridorY1 };
   }
   // single-loaded: risers (blind) | [elevators | washrooms] front band | CORRIDOR (active)
