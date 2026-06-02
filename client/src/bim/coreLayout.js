@@ -8,61 +8,63 @@ import { CORE_DIMS } from "./coreObjects.js";
 
 const r1 = (n) => Math.round(n * 10) / 10;
 
-// ---- service pods: wrap up to 3 rooms (left / top / right) around one small vestibule that opens
-// 'south' (to the floor). The code DECIDES how many pods by trying each valid count and keeping the
-// arrangement that packs the service zone into the least width (tightest core). No hard-coded layout.
-// Returns { placed:[{...cell,lx,ly,lw,lh}], vests:[{id,lx,ly,lw,lh}], width } packed into height H.
-function packServicePods(rooms, H, vestW0 = 6, vestH0 = 7) {
-  if (!rooms.length) return { placed: [], vests: [], width: 0 };
+// ---- service zone: pack the service rooms by their ADJACENCY RULE.
+//   access "dedicated" -> the room gets its own private vestibule (e.g. freight service lobby)
+//   access "shared"    -> rooms cluster onto as few shared vestibules as possible (share aggressively)
+//   access "floor"     -> the room doors straight to the building floor (e.g. mechanical room)
+// Columns span the full band height H; multi-room columns STACK rooms (keeps each room near-square
+// instead of a full-height skinny slot). Returns { placed, vests, width }.
+const ASPECT_MAX = 2.5;
+function packServiceZone(rooms, H, dims, vestW0 = 6) {
   const area = (c) => c.wFt * c.dFt;
-  // build ONE pod (1-3 rooms) at local origin; returns {cells, vest, w} filling height H
-  const buildPod = (grp, id) => {
-    const cells = [], R = grp.slice().sort((a, b) => area(b) - area(a));
-    const top = R.length === 3 ? R[2] : null;          // smallest caps the middle column
-    const left = R[0] || null, right = R.length >= 2 ? R[1] : null;
-    const vestH = top ? Math.min(vestH0, H - 4) : H;    // small vestibule if a top room caps it, else full height
-    const vestW = top ? Math.max(vestW0, area(top) / Math.max(H - vestH, 4)) : vestW0;
-    const leftW = left ? Math.max(area(left) / H, 4) : 0;
-    const rightW = right ? Math.max(area(right) / H, 4) : 0;
-    const w = leftW + vestW + rightW;
-    if (left) cells.push({ ...left, lx: 0, ly: 0, lw: leftW, lh: H, vestId: id });
-    if (top) cells.push({ ...top, lx: leftW, ly: 0, lw: vestW, lh: H - vestH, vestId: id });
-    if (right) cells.push({ ...right, lx: leftW + vestW, ly: 0, lw: rightW, lh: H, vestId: id });
-    const vest = { id, lx: leftW, ly: H - vestH, lw: vestW, lh: vestH };
-    return { cells, vest, w };
+  const cols = []; let vid = 0;
+  // stack a set of rooms into a column of width colW (heights = area/colW), each tagged to vestibule v
+  const stack = (set, colW, x0, vestId) => set.map((c) => ({ ...c, _h: area(c) / colW, vestId })).map((c, i, a) => {
+    const yy = a.slice(0, i).reduce((s, k) => s + k._h, 0); return { ...c, lx: x0, ly: yy, lw: colW, lh: c._h };
+  });
+  // a SHARED column: vestibule strip (opens S) with ALL the shareable rooms stacked on one side, so the
+  // column is as wide as possible (wider column = squarer rooms). Each stacked room touches the vestibule.
+  const sharedColumn = (set) => {
+    const id = vid++;
+    const total = set.reduce((s, c) => s + area(c), 0);
+    const colW = Math.max(total / H, 6);
+    const cells = stack(set.slice().sort((a, b) => area(b) - area(a)), colW, 0, id);
+    const vest = { id, lx: colW, ly: 0, lw: vestW0, lh: H, dedicated: false };
+    return { w: colW + vestW0, cells, vests: [vest] };
   };
-  // partition rooms into n pods (<=3 each), greedily balancing area into the currently-smallest pod
-  const partition = (n) => {
-    const groups = Array.from({ length: n }, () => []);
-    const load = new Array(n).fill(0);
-    for (const room of rooms.slice().sort((a, b) => area(b) - area(a))) {
-      let best = -1; for (let i = 0; i < n; i++) if (groups[i].length < 3 && (best < 0 || load[i] < load[best])) best = i;
-      if (best < 0) return null;                          // can't fit (n too small)
-      groups[best].push(room); load[best] += area(room);
-    }
-    return groups.filter((g) => g.length);
+  // a DEDICATED column: one private vestibule (opens S) beside its single room. An elevator (freight)
+  // keeps its real car size at the south end; its lobby wraps the rest so the shaft is not stretched.
+  const dedicatedColumn = (c) => {
+    const id = vid++;
+    const isElev = c.type === "elevator" || c.freight;
+    const rh = isElev ? Math.min(c.dFt, H) : H;
+    const rw = isElev ? Math.max(c.wFt, area(c) / rh) : Math.max(area(c) / H, 5);
+    const cells = [{ ...c, lx: 0, ly: H - rh, lw: rw, lh: rh, vestId: id }];
+    const vests = [{ id, lx: rw, ly: 0, lw: vestW0, lh: H, dedicated: true }];               // strip beside the shaft
+    if (rh < H) vests.push({ id, lx: 0, ly: 0, lw: rw, lh: H - rh, dedicated: true, filler: true }); // lobby cap above
+    return { w: rw + vestW0, cells, vests };
   };
-  // try the minimum feasible pod count and one more; keep the tightest (least width)
-  let bestW = Infinity, best = null;
-  const nMin = Math.ceil(rooms.length / 3);
-  for (let n = nMin; n <= nMin + 1; n++) {
-    const groups = partition(n); if (!groups) continue;
-    const pods = groups.map((g, i) => buildPod(g, i));
-    const width = pods.reduce((s, p) => s + p.w, 0);
-    const ar = pods.reduce((s, p) => s + Math.abs(Math.log((p.w || 1) / H)), 0);  // squareness penalty
-    const cost = width + ar * 0.5;
-    if (cost < bestW) { bestW = cost; best = { pods, width }; }
-  }
-  if (!best) { const p = buildPod(rooms.slice(0, 3), 0); best = { pods: [p], width: p.w }; }
-  // lay the pods left-to-right
+  // a FLOOR column: the room doors straight to the floor (no vestibule). Mech holds the sealed ducts.
+  const floorColumn = (c) => ({ w: Math.max(area(c) / H, 6), cells: [{ ...c, lx: 0, ly: 0, lw: Math.max(area(c) / H, 6), lh: H }], vests: [] });
+
+  const shared = rooms.filter((r) => r.access === "shared");
+  const dedicated = rooms.filter((r) => r.access === "dedicated");
+  const floor = rooms.filter((r) => r.access === "floor");
+  if (shared.length) cols.push(sharedColumn(shared));           // ALL shareables onto ONE vestibule
+  for (const c of dedicated) cols.push(dedicatedColumn(c));
+  for (const c of floor) cols.push(floorColumn(c));
+
   const placed = [], vests = []; let x = 0;
-  for (const p of best.pods) {
-    for (const c of p.cells) placed.push({ ...c, lx: c.lx + x });
-    vests.push({ ...p.vest, lx: p.vest.lx + x });
-    x += p.w;
+  for (const col of cols) {
+    for (const c of col.cells) placed.push({ ...c, lx: c.lx + x });
+    for (const v of col.vests) vests.push({ ...v, lx: v.lx + x });
+    x += col.w;
   }
-  return { placed, vests, width: best.width };
+  return { placed, vests, width: x };
 }
+
+// kept for any caller: legacy small-vestibule pod packer (unused by central now)
+function packServicePods(rooms, H) { return packServiceZone(rooms, H, CORE_DIMS); }
 
 // ---- squarified treemap (Bruls, Huizing & van Wijk 2000): fill rect with near-square cells ----
 function squarify(items, x, y, w, h) {
@@ -124,11 +126,11 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
     const washNeed = Math.max(wcM ? wcM.wFt : 0, wcW ? wcW.wFt : 0) + 8;
     const Hc = Math.max(sD + washNeed, lobbyD + carD + 16, sD + 10);
     const serviceH = Hc - lobbyD - carD;
-    // the sealed shafts become one MECHANICAL ROOM (a single pod room; shafts squarified inside it)
+    // the sealed ducts become one MECHANICAL ROOM that doors straight to the floor (shafts squarified inside)
     const mechArea = areaOf(sealed);
-    const mechRoom = mechArea > 0 ? { key: "mech", type: "shaft", name: "Mechanical", wFt: Math.sqrt(mechArea), dFt: Math.sqrt(mechArea), access: "vestibule", isMech: true } : null;
+    const mechRoom = mechArea > 0 ? { key: "mech", type: "shaft", name: "Mechanical", wFt: Math.sqrt(mechArea), dFt: Math.sqrt(mechArea), access: "floor", isMech: true } : null;
     const serviceRooms = boh.concat(mechRoom ? [mechRoom] : []);
-    const pod = packServicePods(serviceRooms, serviceH);
+    const pod = packServiceZone(serviceRooms, serviceH, dims);
     const centerW = Math.max(bankW, pod.width, 18);
     const psc = centerW / (pod.width || 1);
     const washH = Hc - sD;
@@ -138,14 +140,14 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
     let y = 0;
     if (lobby) bandRow(lobby, y, lobbyD, cx, centerW); y += lobbyD;
     if (bank) bandRow(bank, y, carD, cx, centerW); y += carD;
-    // place the pod rooms (scaled to fill centerW); the mech room gets its sealed shafts squarified inside
+    // place service rooms (scaled to fill centerW); the mech room gets its sealed shafts squarified inside
     for (const c of pod.placed) {
       const rx = cx + c.lx * psc, ry = sy0 + c.ly, rw = c.lw * psc, rh = c.lh;
       if (c.isMech && sealed.length) {
-        squarify(sealed.map((s) => ({ area: s.wFt * s.dFt, cell: s })), rx, ry, rw, rh).forEach((p) => bandRow({ ...p.d.cell, access: "mech", vestId: c.vestId }, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
+        squarify(sealed.map((s) => ({ area: s.wFt * s.dFt, cell: s })), rx, ry, rw, rh).forEach((p) => bandRow({ ...p.d.cell, access: "mech" }, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
       } else bandRow(c, ry, rh, rx, rw);
     }
-    pod.vests.forEach((v, i) => bandRow({ key: "svcVest" + v.id, type: "lobby", name: pod.vests.length > 1 ? "Service vest " + (v.id + 1) : "Service vestibule", access: "floor", vestibule: true, vestId: v.id }, sy0 + v.ly, v.lh, cx + v.lx * psc, v.lw * psc));
+    pod.vests.forEach((v, i) => bandRow({ key: "svcVest" + v.id + "_" + i, type: "lobby", name: v.dedicated ? "Freight lobby" : "Service vest", access: "floor", vestibule: true, vestId: v.id, dedicated: v.dedicated, filler: v.filler }, sy0 + v.ly, v.lh, cx + v.lx * psc, v.lw * psc));
     const stairsLocal = [];
     if (stairs[0]) stairsLocal.push({ ...stairs[0], lx: 0, ly: 0, lw: Lw, lh: sD });
     if (wcM) bandRow(wcM, sD, washH, 0, Lw);

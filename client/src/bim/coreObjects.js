@@ -61,9 +61,9 @@ export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, s
       let lobD = Math.max(D.lobbyDepthFt, highRise ? 8 : 0, minArea / lobW);
       cells.push({ key: "lobby", type: "lobby", name: highRise ? "Elevator lobby (FSAE)" : "Elevator lobby", wFt: lobW, dFt: Math.round(lobD * 10) / 10, group: "vt", face: "active", rated: highRise, access: "floor" });
     }
-    if (T.elevatorControl) cells.push({ key: "control", type: "shaft", name: "Lift control", wFt: D.control.w, dFt: D.control.d, group: "boh", face: "blind", access: "vestibule" });
+    if (T.elevatorControl) cells.push({ key: "control", type: "shaft", name: "Lift control", wFt: D.control.w, dFt: D.control.d, group: "boh", face: "blind", access: "shared" });
     // freight / service elevator — reached from its OWN service vestibule, never the passenger lobby
-    if (svc > 0) cells.push({ key: "freight", type: "elevator", name: "Freight", wFt: svc * D.liftService.w, dFt: D.liftService.d, group: "boh", face: "blind", cars: svc, freight: true, access: "vestibule" });
+    if (svc > 0) cells.push({ key: "freight", type: "elevator", name: "Freight", wFt: svc * D.liftService.w, dFt: D.liftService.d, group: "boh", face: "blind", cars: svc, freight: true, access: "dedicated" });
   }
 
   // ---- egress ----
@@ -82,13 +82,13 @@ export function buildCoreObjects({ elevators, wcPerSex, lavPerSex, stairCount, s
     cells.push({ key: "wcW", type: "restroom", name: "Women", wFt: w.w, dFt: w.d, group: "sanitary", face: "blind", access: "floor", wc: wcPerSex, lav: lavPerSex, urinals: 0 });
   }
   // janitor closet — reached from the service vestibule (lactation is TENANT scope, not base building)
-  if (T.janitor) cells.push({ key: "janitor", type: "shaft", name: "Janitor / sink", wFt: D.janitor.w, dFt: D.janitor.d, group: "boh", face: "blind", access: "vestibule" });
+  if (T.janitor) cells.push({ key: "janitor", type: "shaft", name: "Janitor / sink", wFt: D.janitor.w, dFt: D.janitor.d, group: "boh", face: "blind", access: "shared" });
   if (T.drinkingFountain) tracked.push("drinking fountain (corridor niche)");
 
   // ---- MEP shafts. Electrical + telecom need per-floor access (NEC); duct/plumbing/fire are sealed risers. ----
   const shaftKeys = ["mechSupply", "mechExhaust", "electricalRiser", "dataRiser", "plumbingRiser", "fireRiser"];
   const names = { mechSupply: "Supply air", mechExhaust: "Exhaust air", electricalRiser: "Elec riser", dataRiser: "Data riser", plumbingRiser: "Plumb riser", fireRiser: "Fire riser", pressuriz: "Press riser" };
-  const accessByKey = { electricalRiser: "vestibule", dataRiser: "vestibule" };  // others sealed
+  const accessByKey = { electricalRiser: "shared", dataRiser: "shared" };  // others sealed
   const active = shaftKeys.filter((k) => T[k]);
   const shareSum = active.reduce((s, k) => s + MEP_SHARES[k], 0) || 1;
   for (const k of active) {

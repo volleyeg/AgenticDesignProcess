@@ -19,12 +19,11 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   const stairs = core.stairCells || [];
   const corridor = cells.find((c) => c.key === "lobby")?.rect || cells.find((c) => c.type === "lobby")?.rect || null;
   const vestCells = cells.filter((c) => c.key && c.key.startsWith("svcVest"));
-  const vestById = {}; vestCells.forEach((v) => { vestById[v.vestId] = v.rect; });
+  const vestById = {}; vestCells.filter((v) => !v.filler).forEach((v) => { vestById[v.vestId] = v.rect; });
   const nearestVest = (r) => vestCells.length ? vestCells.map((v) => v.rect).sort((a, b) => (Math.hypot(a.x - r.x, a.y - r.y) - Math.hypot(b.x - r.x, b.y - r.y)))[0] : null;
   const vestFor = (c) => (c.vestId != null && vestById[c.vestId]) || nearestVest(c.rect);
   const mechCells = cells.filter((c) => c.access === "mech");
-  const mechByVest = {};
-  mechCells.forEach((c) => { const k = c.vestId != null ? c.vestId : 0; (mechByVest[k] = mechByVest[k] || []).push(c.rect); });
+  const mechByVest = mechCells.length ? { all: mechCells.map((c) => c.rect) } : {};
   const bbox = (rects) => ({ x: Math.min(...rects.map((r) => r.x)), y: Math.min(...rects.map((r) => r.y)), w: Math.max(...rects.map((r) => r.x + r.w)) - Math.min(...rects.map((r) => r.x)), h: Math.max(...rects.map((r) => r.y + r.h)) - Math.min(...rects.map((r) => r.y)) });
   const _all = [...cells, ...stairs].map((c) => c.rect).filter(Boolean);
   const coreBox = _all.length
@@ -294,15 +293,14 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
         return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={c.name} />;
       })}
       {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={perimeterEdge(s.rect)} />)}
-      {/* doors: each service room opens into its own pod's vestibule; each mech cluster gets one door */}
-      {cells.filter((c) => c.access === "vestibule" && inView(c.rect)).map((c, i) => {
+      {/* service rooms door into their vestibule (shared or dedicated); mech cluster doors to the floor */}
+      {cells.filter((c) => (c.access === "shared" || c.access === "dedicated") && inView(c.rect)).map((c, i) => {
         const v = vestFor(c); const e = v ? edgeToward(c.rect, v) : null; return e ? <Door key={"dv" + i} edge={e} r={c.rect} /> : null;
       })}
       {Object.keys(mechByVest).map((k, i) => {
-        const mr = bbox(mechByVest[k]); const v = vestById[k] || nearestVest(mr); const e = v ? edgeToward(mr, v) : null;
-        return e && inView(mr) ? <Door key={"dm" + i} edge={e} r={mr} /> : null;
+        const mr = bbox(mechByVest[k]); return inView(mr) ? <Door key={"dm" + i} edge={perimeterEdge(mr)} r={mr} /> : null;
       })}
-      {vestCells.filter((v) => inView(v.rect)).map((v, i) => <Door key={"dvf" + i} edge={perimeterEdge(v.rect)} r={v.rect} w={4} />)}
+      {vestCells.filter((v) => !v.filler && inView(v.rect)).map((v, i) => <Door key={"dvf" + i} edge={perimeterEdge(v.rect)} r={v.rect} w={4} />)}
     </svg>
   );
 }
