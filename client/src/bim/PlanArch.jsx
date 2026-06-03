@@ -204,7 +204,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     const clr = Math.min(S(5.5), ph * 0.42);                       // clear entry zone along the front (no fixtures)
     const fieldTop = py, fieldBot = py + ph - clr;                 // fixtures live above the clear zone
     const F = [];
-    const stallDeep = S(4.8), accRun = S(5), stallRun = S(3), lavW = S(1.6), lavRun = S(2.2), uRun = S(2.0);
+    const stallDeep = S(5), accRun = S(5), stallRun = S(3), lavW = S(1.6), lavRun = S(2.5), uRun = S(2.5);  // A117.1: stall 60in deep, acc 60x60, lav/urinal 30in clear floor
     const aisleX = px + stallDeep;
     // stalls along the LEFT wall, stacked front-to-back; first stall is the accessible one
     let yy = fieldTop;
@@ -221,6 +221,8 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     let ry = fieldTop + 1;
     for (let i = 0; i < lav && ry + 2.6 < fieldBot; i++) { F.push(<rect key={"l" + i} x={lavX} y={ry} width={lavW} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />); ry += lavRun; }
     for (let i = 0; i < urinals && ry + 3 < fieldBot; i++) { F.push(<rect key={"u" + i} x={lavX - 0.4} y={ry} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />); ry += uRun; }
+    // 60in (5ft) wheelchair turning circle (A117.1 304.3) in the clear aisle — clear of fixtures
+    F.push(<circle key="turn" cx={px + pw * 0.56} cy={py + ph * 0.46} r={S(2.5)} fill="none" stroke={INK} strokeWidth="0.35" strokeDasharray="2 2" opacity="0.5" />);
     return wcGroup(F, r, men, false, "bottom", 0.5);               // door centered on the front, into the clear zone
   };
   const wcGroup = (F, r, men, vertical, e, doorAt) => {

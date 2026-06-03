@@ -127,28 +127,21 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
     const mechArea = areaOf(sealed);
 
     const wcCount = wcM ? (wcM.wc || 3) : 3, lavCount = wcM ? (wcM.lav || 3) : 3, uCount = wcM ? (wcM.urinals || 0) : 0;
-    const washDepthNeed = Math.max(5 + Math.max(0, wcCount - 1) * 3, lavCount * 2.2 + uCount * 2.0) + 8;  // deeper fixture wall + clear zone + walls
+    const washDepthNeed = Math.max(5 + Math.max(0, wcCount - 1) * 3, (lavCount + uCount) * 2.5) + 7;  // deeper fixture wall (60in stalls / 30in lav+urinal) + clear zone
     const D = Math.max(sD, carD + lobbyD, washDepthNeed, 16);     // band depth = the deepest requirement
     const stairsLocal = [];
     let x = 0;
+    const wcWidth = (c) => Math.max((c.wFt * c.dFt) / D, 12);     // >= 12ft so the 60in turning circle clears the stalls
+    const svcLobbyD = Math.min(8, D * 0.45);
+    const roomH = D - svcLobbyD;
+    // helper: full-depth washroom with front entry + baffle
+    const placeWC = (c) => { if (c) { bandRow({ ...c, entry: "bottom" }, 0, D, x, wcWidth(c)); x += wcWidth(c); } };
 
     // 1. Stair A — far-left corner (remote)
     if (stairs[0]) { stairsLocal.push({ ...stairs[0], lx: x, ly: 0, lw: sW, lh: D }); x += sW; }
 
-    // 2. Washrooms (men + women) — full depth, entry on the front (S) edge with a privacy baffle
-    const wcWidth = (c) => Math.max((c.wFt * c.dFt) / D, 10);
-    if (wcM) { bandRow({ ...wcM, entry: "bottom" }, 0, D, x, wcWidth(wcM)); x += wcWidth(wcM); }
-    if (wcW) { bandRow({ ...wcW, entry: "bottom" }, 0, D, x, wcWidth(wcW)); x += wcWidth(wcW); }
-
-    // 3. Elevator bank (N) + central lobby (S, opens to the floor and fronts the bank)
-    if (bank) bandRow(bank, 0, carD, x, bankW);
-    if (lobby) bandRow(lobby, carD, D - carD, x, bankW);
-    x += bankW;
-
-    // 4. BACK-OF-HOUSE service block (separate from the pax lobby): a freight / service lobby that opens
-    //    to the floor, with the freight car AND every BOH service (janitor, control, HVAC) opening onto IT.
-    const svcLobbyD = Math.min(8, D * 0.45);
-    const roomH = D - svcLobbyD;
+    // 2. BACK-OF-HOUSE block (its OWN freight / service lobby, kept apart from the pax lobby by the washroom):
+    //    the freight car AND every BOH service (janitor, control, HVAC) open onto the freight/service lobby.
     const svcStart = x;
     if (freight) { bandRow({ ...freight }, 0, Math.min(freight.dFt, roomH), x, freight.wFt); x += freight.wFt; }
     if (mechArea > 0) {
@@ -157,10 +150,20 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
       x += mechW;
     }
     for (const c of small) { const w = Math.max(c.wFt, 5); bandRow({ ...c, access: "svc", doorEdge: "bottom" }, 0, roomH, x, w); x += w; }
-    // the freight / service lobby strip along the front (S), opening to the floor — services door onto it
-    bandRow({ key: "freightLobby", type: "lobby", name: "Freight / service lobby", access: "edge", vestibule: true, dedicated: true }, roomH, svcLobbyD, svcStart, x - svcStart);
+    if (x > svcStart) bandRow({ key: "freightLobby", type: "lobby", name: "Freight / service lobby", access: "edge", vestibule: true, dedicated: true }, roomH, svcLobbyD, svcStart, x - svcStart);
 
-    // 5. Stair B — far-right corner (remote); extras continue along the row
+    // 3. Men's washroom — separates the BOH service lobby from the central pax lobby
+    placeWC(wcM);
+
+    // 4. Elevator bank (N) + central pax lobby (S, opens to the floor and fronts the bank)
+    if (bank) bandRow(bank, 0, carD, x, bankW);
+    if (lobby) bandRow(lobby, carD, D - carD, x, bankW);
+    x += bankW;
+
+    // 5. Women's washroom
+    placeWC(wcW);
+
+    // 6. Stair B — far-right corner (remote); extras continue along the row
     if (stairs[1]) { stairsLocal.push({ ...stairs[1], lx: x, ly: 0, lw: sW, lh: D }); x += sW; }
     for (let i = 2; i < stairs.length; i++) { stairsLocal.push({ ...stairs[i], lx: x, ly: 0, lw: sW, lh: D }); x += sW; }
 
