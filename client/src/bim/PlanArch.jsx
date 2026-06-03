@@ -23,7 +23,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   const nearestVest = (r) => vestCells.length ? vestCells.map((v) => v.rect).sort((a, b) => (Math.hypot(a.x - r.x, a.y - r.y) - Math.hypot(b.x - r.x, b.y - r.y)))[0] : null;
   const vestFor = (c) => (c.vestId != null && vestById[c.vestId]) || nearestVest(c.rect);
   const mechCells = cells.filter((c) => c.access === "mech");
-  const mechByVest = {}; mechCells.forEach((c) => { const k = c.vestId != null ? c.vestId : "all"; (mechByVest[k] = mechByVest[k] || []).push(c.rect); });
+  const mechByVest = {}; mechCells.forEach((c) => { const k = c.vestId != null ? c.vestId : "all"; (mechByVest[k] = mechByVest[k] || { rects: [], doorEdge: c.doorEdge }).rects.push(c.rect); });
   const bbox = (rects) => ({ x: Math.min(...rects.map((r) => r.x)), y: Math.min(...rects.map((r) => r.y)), w: Math.max(...rects.map((r) => r.x + r.w)) - Math.min(...rects.map((r) => r.x)), h: Math.max(...rects.map((r) => r.y + r.h)) - Math.min(...rects.map((r) => r.y)) });
   const _all = [...cells, ...stairs].map((c) => c.rect).filter(Boolean);
   const coreBox = _all.length
@@ -197,47 +197,31 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   };
 
   // washroom: draws EXACTLY the required fixtures — `wc` stalls (one accessible), `lav` lavatories,
-  // `urinals` (men) — with a clear entry/turning zone the door opens into (ADA 603.2.3).
-  const Washroom = ({ r, men, entry, wc = 3, lav = 3, urinals = 0 }) => {
+  // `urinals` (men). Fixtures run along the DEEP walls; the door opens into a clear front zone the
+  // baffle screens (ADA 603.2.3). Entry is the front (S) edge; never opens onto a fixture.
+  const Washroom = ({ r, men, entry = "bottom", wc = 3, lav = 3, urinals = 0 }) => {
     const px = X(r.x) + wall, py = Y(r.y) + wall, pw = S(r.w) - wall * 2, ph = S(r.h) - wall * 2;
-    const e = entry || (ph >= pw ? "left" : "bottom");
-    const vertical = e === "left" || e === "right";
-    const F = []; const sd = S(5), stallW = S(3), accW = S(5), lavP = S(2.4), uP = S(2);
-    const length = vertical ? ph : pw;
-    const clr = Math.min(S(6), length * 0.3);                    // clear entry zone (no fixtures)
-    const stallH = (i) => (i === 0 ? accW : stallW);             // first stall is the accessible one
-    if (vertical) {
-      const stallsRight = e !== "right";
-      const sx = stallsRight ? px + pw - sd : px, aisleX = stallsRight ? sx : sx + sd;
-      const lavX = stallsRight ? px + 1 : px + pw - 1 - S(1.6);
-      const fy1 = py + ph - clr;
-      let yy = py;
-      for (let i = 0; i < wc; i++) { const h = stallH(i); if (yy + h > fy1) break;
-        F.push(<rect key={"s" + i} x={sx} y={yy + 0.5} width={sd} height={h - 1} fill="none" stroke={INK} strokeWidth="0.5" />);
-        F.push(<rect key={"t" + i} x={stallsRight ? sx + sd - 4.5 : sx + 1.5} y={yy + h / 2 - 2} width={3} height={4} rx={1.3} fill="none" stroke={INK} strokeWidth="0.45" />);
-        F.push(<line key={"sd" + i} x1={aisleX} y1={yy + 1} x2={stallsRight ? aisleX - 3.5 : aisleX + 3.5} y2={yy + h * 0.45} stroke={INK} strokeWidth="0.5" />);
-        if (i === 0) F.push(<circle key="acc" cx={sx + sd / 2} cy={yy + h / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
-        yy += h; }
-      let ly = py + 1;
-      for (let i = 0; i < lav && ly + 2.6 < fy1; i++) { F.push(<rect key={"l" + i} x={lavX} y={ly} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />); ly += lavP; }
-      for (let i = 0; i < urinals && ly + 3 < fy1; i++) { F.push(<rect key={"u" + i} x={lavX} y={ly} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />); ly += uP; }
-      return wcGroup(F, r, men, vertical, e, (ph - clr / 2) / ph);
+    const clr = Math.min(S(5.5), ph * 0.42);                       // clear entry zone along the front (no fixtures)
+    const fieldTop = py, fieldBot = py + ph - clr;                 // fixtures live above the clear zone
+    const F = [];
+    const stallDeep = S(4.8), accRun = S(5), stallRun = S(3), lavW = S(1.6), lavRun = S(2.2), uRun = S(2.0);
+    const aisleX = px + stallDeep;
+    // stalls along the LEFT wall, stacked front-to-back; first stall is the accessible one
+    let yy = fieldTop;
+    for (let i = 0; i < wc; i++) {
+      const run = i === 0 ? accRun : stallRun; if (yy + run > fieldBot + 0.5) break;
+      F.push(<rect key={"s" + i} x={px + 0.5} y={yy + 0.5} width={stallDeep - 1} height={run - 1} fill="none" stroke={INK} strokeWidth="0.5" />);
+      F.push(<rect key={"t" + i} x={px + stallDeep - 4.4} y={yy + run / 2 - 2} width={2.8} height={4} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />);
+      F.push(<line key={"sd" + i} x1={aisleX} y1={yy + 1} x2={aisleX - 3.4} y2={yy + run * 0.45} stroke={INK} strokeWidth="0.5" />);
+      if (i === 0) F.push(<circle key="acc" cx={px + stallDeep / 2} cy={yy + run / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
+      yy += run;
     }
-    const stallsTop = e !== "top";
-    const sy = stallsTop ? py : py + ph - sd, aisleY = stallsTop ? sy + sd : sy;
-    const lavY = stallsTop ? py + ph - 1 - 2.6 : py + 1;
-    const fx1 = px + pw - clr;
-    let xx = px;
-    for (let i = 0; i < wc; i++) { const w = stallH(i); if (xx + w > fx1) break;
-      F.push(<rect key={"s" + i} x={xx + 0.5} y={sy} width={w - 1} height={sd} fill="none" stroke={INK} strokeWidth="0.5" />);
-      F.push(<rect key={"t" + i} x={xx + w / 2 - 1.5} y={stallsTop ? sy + sd - 4.5 : sy + 1.5} width={3} height={4} rx={1.3} fill="none" stroke={INK} strokeWidth="0.45" />);
-      F.push(<line key={"sd" + i} x1={xx + 1} y1={aisleY} x2={xx + w * 0.45} y2={stallsTop ? aisleY + 3.5 : aisleY - 3.5} stroke={INK} strokeWidth="0.5" />);
-      if (i === 0) F.push(<circle key="acc" cx={xx + w / 2} cy={sy + sd / 2} r={2.4} fill="none" stroke={INK} strokeWidth="0.4" />);
-      xx += w; }
-    let lxx = px + 1;
-    for (let i = 0; i < lav && lxx + 1.6 < fx1; i++) { F.push(<rect key={"l" + i} x={lxx} y={lavY} width={S(1.6)} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />); lxx += lavP; }
-    for (let i = 0; i < urinals && lxx + 2.3 < fx1; i++) { F.push(<rect key={"u" + i} x={lxx} y={stallsTop ? lavY - 3.4 : lavY + 3} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />); lxx += uP; }
-    return wcGroup(F, r, men, vertical, e, (pw - clr / 2) / pw);
+    // lavatories then urinals along the RIGHT wall, front-to-back (stalls on the left wall, clear zone at front)
+    const lavX = px + pw - 1 - lavW;
+    let ry = fieldTop + 1;
+    for (let i = 0; i < lav && ry + 2.6 < fieldBot; i++) { F.push(<rect key={"l" + i} x={lavX} y={ry} width={lavW} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />); ry += lavRun; }
+    for (let i = 0; i < urinals && ry + 3 < fieldBot; i++) { F.push(<rect key={"u" + i} x={lavX - 0.4} y={ry} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />); ry += uRun; }
+    return wcGroup(F, r, men, false, "bottom", 0.5);               // door centered on the front, into the clear zone
   };
   const wcGroup = (F, r, men, vertical, e, doorAt) => {
     const px = X(r.x) + wall, py = Y(r.y) + wall, pw = S(r.w) - wall * 2, ph = S(r.h) - wall * 2;
@@ -309,16 +293,18 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
         return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={c.name} />;
       })}
       {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={perimeterEdge(s.rect)} />)}
-      {/* service rooms door into their vestibule (shared or dedicated); landscape edge-rooms door to the floor */}
+      {/* legacy vestibule doors (other core types) */}
       {cells.filter((c) => (c.access === "shared" || c.access === "dedicated") && inView(c.rect)).map((c, i) => {
         const v = vestFor(c); const e = v ? edgeToward(c.rect, v) : null; return e ? <Door key={"dv" + i} edge={e} r={c.rect} /> : null;
       })}
-      {cells.filter((c) => c.access === "edge" && c.type !== "lobby" && inView(c.rect)).map((c, i) => <Door key={"de" + i} edge={perimeterEdge(c.rect)} r={c.rect} />)}
+      {/* BOH services + landscape edge-rooms: door to their stated edge, else to the floor (perimeter) */}
+      {cells.filter((c) => (c.access === "svc" || c.access === "edge") && c.type !== "lobby" && inView(c.rect)).map((c, i) => <Door key={"de" + i} edge={c.doorEdge || perimeterEdge(c.rect)} r={c.rect} />)}
       {Object.keys(mechByVest).map((k, i) => {
-        const mr = bbox(mechByVest[k]); const v = vestById[k]; const e = v ? edgeToward(mr, v) : perimeterEdge(mr);
+        const grp = mechByVest[k]; const mr = bbox(grp.rects); const v = vestById[k];
+        const e = grp.doorEdge || (v ? edgeToward(mr, v) : perimeterEdge(mr));
         return inView(mr) ? <Door key={"dm" + i} edge={e} r={mr} /> : null;
       })}
-      {vestCells.filter((v) => !v.filler && inView(v.rect)).map((v, i) => <Door key={"dvf" + i} edge={perimeterEdge(v.rect)} r={v.rect} w={4} />)}
+      {cells.filter((c) => c.vestibule && !c.filler && inView(c.rect)).map((v, i) => <Door key={"dvf" + i} edge={perimeterEdge(v.rect)} r={v.rect} w={4} />)}
     </svg>
   );
 }

@@ -126,7 +126,9 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
     const freight = boh.find((c) => c.freight) || null;
     const mechArea = areaOf(sealed);
 
-    const D = Math.max(sD, carD + lobbyD, 15);                    // band depth = the deepest element (stair)
+    const wcCount = wcM ? (wcM.wc || 3) : 3, lavCount = wcM ? (wcM.lav || 3) : 3, uCount = wcM ? (wcM.urinals || 0) : 0;
+    const washDepthNeed = Math.max(5 + Math.max(0, wcCount - 1) * 3, lavCount * 2.2 + uCount * 2.0) + 8;  // deeper fixture wall + clear zone + walls
+    const D = Math.max(sD, carD + lobbyD, washDepthNeed, 16);     // band depth = the deepest requirement
     const stairsLocal = [];
     let x = 0;
 
@@ -143,25 +145,20 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
     if (lobby) bandRow(lobby, carD, D - carD, x, bankW);
     x += bankW;
 
-    // 4. Service block — 2-row so each room reaches a floor edge (no service vestibule):
-    //    S row = HVAC/mech (sealed shafts inside) opening S; N row = janitor + control opening N.
-    const smallD = small.length ? Math.max(7, areaOf(small) / 12) : 0;
-    const mechD = mechArea > 0 ? Math.max(D - smallD, D * 0.5) : 0;
-    const mechW = mechArea > 0 ? Math.max(mechArea / mechD, 10) : 0;
+    // 4. BACK-OF-HOUSE service block (separate from the pax lobby): a freight / service lobby that opens
+    //    to the floor, with the freight car AND every BOH service (janitor, control, HVAC) opening onto IT.
+    const svcLobbyD = Math.min(8, D * 0.45);
+    const roomH = D - svcLobbyD;
+    const svcStart = x;
+    if (freight) { bandRow({ ...freight }, 0, Math.min(freight.dFt, roomH), x, freight.wFt); x += freight.wFt; }
     if (mechArea > 0) {
-      squarify(sealed.map((s) => ({ area: s.wFt * s.dFt, cell: s })), x, D - mechD, mechW, mechD).forEach((p) => bandRow({ ...p.d.cell, access: "mech" }, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
-      let sx = x; const sw = mechW / Math.max(small.length, 1);
-      for (const c of small) { bandRow({ ...c, access: "edge" }, 0, D - mechD, sx, sw); sx += sw; }
+      const mechW = Math.max(mechArea / roomH, 10);
+      squarify(sealed.map((s) => ({ area: s.wFt * s.dFt, cell: s })), x, 0, mechW, roomH).forEach((p) => bandRow({ ...p.d.cell, access: "mech", doorEdge: "bottom" }, p.rect.y, p.rect.h, p.rect.x, p.rect.w));
       x += mechW;
-    } else { let sx = x; for (const c of small) { bandRow({ ...c, access: "edge" }, 0, D, sx, 7); sx += 7; } x += small.length * 7; }
-
-    // freight: car (N) above its dedicated freight lobby (S, opens to the floor)
-    if (freight) {
-      const fcarD = Math.min(freight.dFt, D - 6);
-      bandRow({ ...freight }, 0, fcarD, x, freight.wFt);
-      bandRow({ key: "freightLobby", type: "lobby", name: "Freight lobby", access: "edge", vestibule: true, dedicated: true }, fcarD, D - fcarD, x, freight.wFt);
-      x += freight.wFt;
     }
+    for (const c of small) { const w = Math.max(c.wFt, 5); bandRow({ ...c, access: "svc", doorEdge: "bottom" }, 0, roomH, x, w); x += w; }
+    // the freight / service lobby strip along the front (S), opening to the floor — services door onto it
+    bandRow({ key: "freightLobby", type: "lobby", name: "Freight / service lobby", access: "edge", vestibule: true, dedicated: true }, roomH, svcLobbyD, svcStart, x - svcStart);
 
     // 5. Stair B — far-right corner (remote); extras continue along the row
     if (stairs[1]) { stairsLocal.push({ ...stairs[1], lx: x, ly: 0, lw: sW, lh: D }); x += sW; }
