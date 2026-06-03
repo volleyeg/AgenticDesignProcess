@@ -221,8 +221,11 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     let ry = fieldTop + 1;
     for (let i = 0; i < lav && ry + 2.6 < fieldBot; i++) { F.push(<rect key={"l" + i} x={lavX} y={ry} width={lavW} height={2.6} rx={1.2} fill="none" stroke={INK} strokeWidth="0.45" />); ry += lavRun; }
     for (let i = 0; i < urinals && ry + 3 < fieldBot; i++) { F.push(<rect key={"u" + i} x={lavX - 0.4} y={ry} width={2.3} height={3} rx={1.1} fill="none" stroke={INK} strokeWidth="0.45" />); ry += uRun; }
-    // 60in (5ft) wheelchair turning circle (A117.1 304.3) in the clear aisle — clear of fixtures
-    F.push(<circle key="turn" cx={px + pw * 0.56} cy={py + ph * 0.46} r={S(2.5)} fill="none" stroke={INK} strokeWidth="0.35" strokeDasharray="2 2" opacity="0.5" />);
+    // 60in (5ft) wheelchair turning circle (A117.1 304.3) in the CLEAR AISLE between the stall wall and the
+    // lav wall — clear of every fixture (it may overlap clear-floor spaces, never fixtures themselves)
+    const aisleL = px + stallDeep, aisleR = px + pw - lavW - S(1.2);
+    const tr = Math.min(S(2.5), (aisleR - aisleL) / 2);
+    F.push(<circle key="turn" cx={(aisleL + aisleR) / 2} cy={fieldBot - tr - S(0.4)} r={tr} fill="none" stroke={INK} strokeWidth="0.35" strokeDasharray="2 2" opacity="0.5" />);
     return wcGroup(F, r, men, false, "bottom", 0.5);               // door centered on the front, into the clear zone
   };
   const wcGroup = (F, r, men, vertical, e, doorAt) => {

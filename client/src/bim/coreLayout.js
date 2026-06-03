@@ -128,10 +128,16 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
 
     const wcCount = wcM ? (wcM.wc || 3) : 3, lavCount = wcM ? (wcM.lav || 3) : 3, uCount = wcM ? (wcM.urinals || 0) : 0;
     const washDepthNeed = Math.max(5 + Math.max(0, wcCount - 1) * 3, (lavCount + uCount) * 2.5) + 7;  // deeper fixture wall (60in stalls / 30in lav+urinal) + clear zone
-    const D = Math.max(sD, carD + lobbyD, washDepthNeed, 16);     // band depth = the deepest requirement
+    // OPPOSED elevator banks once there are 4+ cars: two rows facing a central lobby halves the bank width
+    // (a 60ft single row becomes ~30ft). The lobby between needs >=8ft, so the band deepens to 2*carD+8.
+    const nCars = bank ? (bank.cars || 1) : 0;
+    const opposed = nCars >= 4;
+    const carW = bank && nCars ? bank.wFt / nCars : 0;
+    const nN = opposed ? Math.ceil(nCars / 2) : nCars, nS = opposed ? nCars - nN : 0;
+    const D = Math.max(sD, carD + lobbyD, washDepthNeed, opposed ? 2 * carD + 8 : 16, 16);  // band depth = deepest requirement
     const stairsLocal = [];
     let x = 0;
-    const wcWidth = (c) => Math.max((c.wFt * c.dFt) / D, 12);     // >= 12ft so the 60in turning circle clears the stalls
+    const wcWidth = (c) => Math.max((c.wFt * c.dFt) / D, 13);     // >= 13ft: 5ft stall + 5ft turning circle + ~2ft lav, all clear
     const svcLobbyD = Math.min(8, D * 0.45);
     const roomH = D - svcLobbyD;
     // helper: full-depth washroom with front entry + baffle
@@ -155,10 +161,21 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
     // 3. Men's washroom — separates the BOH service lobby from the central pax lobby
     placeWC(wcM);
 
-    // 4. Elevator bank (N) + central pax lobby (S, opens to the floor and fronts the bank)
-    if (bank) bandRow(bank, 0, carD, x, bankW);
-    if (lobby) bandRow(lobby, carD, D - carD, x, bankW);
-    x += bankW;
+    // 4. Passenger elevator bank + central lobby. 4+ cars -> two opposed rows (N + S) facing a central
+    //    lobby that reaches the floor through a spur; fewer cars -> a single row with the lobby in front.
+    if (opposed) {
+      const zoneW = nN > nS ? nN * carW : nN * carW + 6;          // spur lane when the rows are equal
+      bandRow({ ...bank, cars: nN, wFt: nN * carW }, 0, carD, x, nN * carW);                  // N row (carries FS marking)
+      bandRow({ ...bank, cars: nS, wFt: nS * carW, fs: 0 }, D - carD, carD, x, nS * carW);     // S row
+      if (lobby) bandRow(lobby, carD, D - 2 * carD, x, zoneW);                                  // lobby between the banks
+      bandRow({ ...lobby, key: "lobbyS", name: "" }, D - carD, carD, x + nS * carW, zoneW - nS * carW); // reaches the floor (S)
+      if (zoneW - nN * carW > 0.5) bandRow({ ...lobby, key: "lobbyN", name: "" }, 0, carD, x + nN * carW, zoneW - nN * carW); // fill (N)
+      x += zoneW;
+    } else {
+      if (bank) bandRow(bank, 0, carD, x, bankW);
+      if (lobby) bandRow(lobby, carD, D - carD, x, bankW);
+      x += bankW;
+    }
 
     // 5. Women's washroom
     placeWC(wcW);
