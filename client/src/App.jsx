@@ -110,6 +110,7 @@ export default function App() {
   const [diag, setDiag] = useState("");
   const [viewMode, setViewMode] = useState("2d");
   const [shellInputs, setShellInputs] = useState({ areaFt2: 25000, aspect: 1.6, coreType: "central", corePosition: "center", stories: 12, program: "office" });
+  const [tenants, setTenants] = useState(1);
   const [shellView, setShellView] = useState("2d");
 
   useEffect(() => { setRunCount(parseInt(localStorage.getItem("forge:runs") || "0")); }, []);
@@ -284,6 +285,11 @@ export default function App() {
                 <option value="center">center</option><option value="north">north</option><option value="south">south</option><option value="east">east</option><option value="west">west</option>
               </select>
             </label>
+            <label className="sfield">tenants
+              <select value={tenants} onChange={(e) => setTenants(+e.target.value)} className="sinp">
+                <option value={1}>1 — full floor</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option>
+              </select>
+            </label>
           </div>
 
           {shell && shellModel && (
@@ -293,7 +299,10 @@ export default function App() {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
                     <div style={{ flex: "1 1 380px", minWidth: 0 }}>
                       <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)", marginBottom: 4 }}>TYPICAL FLOOR PLAN</div>
-                      <PlanArch shell={shell} region="floor" maxW={560} />
+                      <PlanArch shell={shell} region="floor" maxW={560} tenants={tenants} />
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)", marginTop: 4 }}>
+                        {tenants === 1 ? "single tenant — no public corridor; egress to both stairs runs through the suite" : `${tenants} tenants — racetrack corridor; each suite fronts the ring and reaches two stairs`}
+                      </div>
                     </div>
                     <div style={{ flex: "1 1 280px", minWidth: 0 }}>
                       <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)", marginBottom: 4 }}>CORE — ENLARGED</div>

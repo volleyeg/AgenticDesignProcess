@@ -4,15 +4,18 @@
 // door swings, columns as solid squares on a dimensioned grid with gridline bubbles, room labels.
 // Two modes: full floor (region=floor) and zoomed core inset (region=core).
 import React from "react";
+import { planTenants } from "./tenantPlan.js";
 
 const TINT = { // subtle room fills on the sheet so types still read
   elevator: "#e3e7ec", lobby: "#eef1f0", restroom: "#e6eef2", shaft: "#ece8ef",
   lactation: "#e8f0e6", stair: "#efe9e2", support: "#ecedee",
 };
+const TENANT = ["#dde6d6", "#d8e2ea", "#efe6d0", "#e4dbeb"]; // up to 4 suite fills (muted green/blue/sand/lilac)
+const CORRIDOR = "#eae5d9";                                  // racetrack corridor
 const SHEET = "#f5f2ea", INK = "#1f2024", POCHE = "#2b2d31", LINE = "#9aa0a6", THIN = "#c7c2b6";
 const colLabel = (i) => String.fromCharCode(65 + i); // A,B,C...
 
-export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
+export default function PlanArch({ shell, region = "floor", maxW = 720, tenants = 1 }) {
   if (!shell || !shell.core) return null;
   const { W, H, core, grid, facade } = shell;
   const cells = core.components || [];
@@ -287,11 +290,58 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     </g>
   ) : null;
 
+  // ---- tenant test-fit (floor mode): ring corridor + demised suites ----
+  const plan = region === "floor" ? planTenants({ W, H, core, stairs, tenants }) : null;
+  const R = (r) => ({ x: X(r.x), y: Y(r.y), w: S(r.w), h: S(r.h) });
+  const planFills = plan ? (
+    <g>
+      {plan.suites.flatMap((s, i) => s.rects.map((r, j) => { const p = R(r); return <rect key={"sf" + i + "_" + j} x={p.x} y={p.y} width={p.w} height={p.h} fill={TENANT[i % 4]} opacity="0.85" />; }))}
+      {plan.corridor.map((r, i) => { const p = R(r); return <rect key={"co" + i} x={p.x} y={p.y} width={p.w} height={p.h} fill={CORRIDOR} />; })}
+    </g>
+  ) : null;
+  const planOver = plan ? (
+    <g>
+      {/* demising walls between suites */}
+      {plan.demising.map((d, i) => <line key={"dm" + i} x1={X(d.x1)} y1={Y(d.y1)} x2={X(d.x2)} y2={Y(d.y2)} stroke={POCHE} strokeWidth="2" />)}
+      {/* suite entry doors off the ring */}
+      {plan.suites.map((s, i) => {
+        const e = s.entry; if (!e) return null;
+        const d = S(3.6), x = X(e.x), y = Y(e.y);
+        const into = e.edge; // direction the suite lies relative to the ring edge
+        let lx = x, ly = y, ax = x, ay = y, sweep = 1;
+        if (into === "N") { lx = x - d / 2; ly = y; ax = x - d / 2; ay = y - d; }       // door swings north into suite
+        else if (into === "S") { lx = x - d / 2; ly = y; ax = x - d / 2; ay = y + d; }
+        else if (into === "E") { lx = x; ly = y - d / 2; ax = x + d; ay = y - d / 2; }
+        else { lx = x; ly = y - d / 2; ax = x - d; ay = y - d / 2; }
+        const hx = into === "N" || into === "S" ? x + d / 2 : x, hy = into === "E" || into === "W" ? y + d / 2 : y;
+        return (
+          <g key={"en" + i}>
+            <rect x={into === "N" || into === "S" ? x - d / 2 : x - 1} y={into === "E" || into === "W" ? y - d / 2 : y - 1} width={into === "N" || into === "S" ? d : 2} height={into === "E" || into === "W" ? d : 2} fill={SHEET} />
+            <line x1={hx} y1={hy} x2={lx} y2={ly} stroke={INK} strokeWidth="0.7" />
+            <path d={`M ${lx} ${ly} A ${d} ${d} 0 0 ${sweep} ${ax} ${ay}`} fill="none" stroke={INK} strokeWidth="0.4" />
+          </g>
+        );
+      })}
+      {/* suite labels — name + rentable area, placed in each suite's largest rect */}
+      {plan.suites.map((s, i) => {
+        const big = s.rects.slice().sort((a, b) => b.w * b.h - a.w * a.h)[0]; if (!big) return null;
+        const cx = X(big.x + big.w / 2), cy = Y(big.y + big.h / 2);
+        return (
+          <g key={"sl" + i}>
+            <text x={cx} y={cy - 4} fill={INK} fontSize="8" fontWeight="600" textAnchor="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{s.name}</text>
+            <text x={cx} y={cy + 6} fill={INK} fontSize="6.5" textAnchor="middle" opacity="0.75" style={{ fontFamily: "ui-monospace,monospace" }}>{s.areaFt2.toLocaleString()} sf</text>
+          </g>
+        );
+      })}
+    </g>
+  ) : null;
+
   return (
     <svg viewBox={`0 0 ${svgW} ${svgH}`} width="100%" style={{ maxWidth: svgW, background: SHEET, borderRadius: 4, display: "block" }}>
       <defs>
         <marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill={INK} /></marker>
       </defs>
+      {planFills}
       {facadeEls}
       {gridEls}
       {region === "floor" && grid && grid.columns.map((c, i) => (
@@ -332,6 +382,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
         return inView(mr) ? <Door key={"dm" + i} edge={e} r={mr} /> : null;
       })}
       {cells.filter((c) => c.vestibule && !c.filler && inView(c.rect)).map((v, i) => <Door key={"dvf" + i} edge={perimeterEdge(v.rect)} r={v.rect} w={4} />)}
+      {planOver}
     </svg>
   );
 }
