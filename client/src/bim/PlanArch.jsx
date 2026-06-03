@@ -69,9 +69,12 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
   // ---- room drawing: dark envelope + inset interior = poché walls ----
   const CODE = { "Supply air": "SA", "Exhaust air": "EA", "Elec riser": "ELEC", "Data riser": "DATA", "Plumb riser": "PL", "Fire riser": "FP", "Lift control": "CTRL", "Janitor / sink": "JAN", "Lactation": "LACT", "Vestibule": "VEST", "Refuge": "REF", "Press. shaft": "PRES" };
   const codeOf = (n) => CODE[n] || (n || "").split(/[ /.]+/).filter(Boolean).map((w) => w[0]).join("").toUpperCase().slice(0, 4);
-  const Room = ({ r, fill, children, label }) => {
+  const Room = ({ r, fill, children, label, walls }) => {
     const px = X(r.x), py = Y(r.y), pw = S(r.w), ph = S(r.h);
-    const iw = pw - wall * 2, ih = ph - wall * 2, cx = px + pw / 2, cy = py + ph / 2;
+    const W = walls || { top: true, bottom: true, left: true, right: true };
+    const ix = px + (W.left ? wall : 0), iy = py + (W.top ? wall : 0);
+    const iw = pw - (W.left ? wall : 0) - (W.right ? wall : 0), ih = ph - (W.top ? wall : 0) - (W.bottom ? wall : 0);
+    const cx = px + pw / 2, cy = py + ph / 2;
     const rotate = ih > iw * 1.25;                       // tall-narrow box -> vertical text
     const along = rotate ? ih : iw, across = rotate ? iw : ih;
     let text = label || "", fs = 7;
@@ -82,8 +85,11 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
     }
     return (
       <g>
-        <rect x={px} y={py} width={pw} height={ph} fill={POCHE} />
-        <rect x={px + wall} y={py + wall} width={Math.max(iw, 0)} height={Math.max(ih, 0)} fill={fill} />
+        {W.left && <rect x={px} y={py} width={wall} height={ph} fill={POCHE} />}
+        {W.right && <rect x={px + pw - wall} y={py} width={wall} height={ph} fill={POCHE} />}
+        {W.top && <rect x={px} y={py} width={pw} height={wall} fill={POCHE} />}
+        {W.bottom && <rect x={px} y={py + ph - wall} width={pw} height={wall} fill={POCHE} />}
+        <rect x={ix} y={iy} width={Math.max(iw, 0)} height={Math.max(ih, 0)} fill={fill} />
         {children}
         {text && across > 6 && (
           <text x={cx} y={cy} fill={INK} fontSize={fs} textAnchor="middle" dominantBaseline="middle" transform={rotate ? `rotate(-90 ${cx} ${cy})` : undefined} style={{ fontFamily: "ui-monospace,monospace" }}>{text}</text>
@@ -291,12 +297,28 @@ export default function PlanArch({ shell, region = "floor", maxW = 720 }) {
       {region === "floor" && grid && grid.columns.map((c, i) => (
         <rect key={"c" + i} x={X(c.xFt) - S(c.sizeFt) / 2} y={Y(c.yFt) - S(c.sizeFt) / 2} width={S(c.sizeFt)} height={S(c.sizeFt)} fill={POCHE} />
       ))}
-      {/* core objects */}
-      {cells.filter((c) => inView(c.rect)).map((c, i) => {
-        if (c.type === "elevator") return <Elevator key={i} r={c.rect} cars={c.cars} svc={c.svc} fs={c.fs} freight={c.freight} />;
-        if (c.type === "restroom") return <Washroom key={i} r={c.rect} men={c.key === "wcM"} entry={c.entry || wcEntry(c.rect)} wc={c.wc} lav={c.lav} urinals={c.urinals} />;
-        return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={c.name} />;
-      })}
+      {/* core objects. A lobby leaves an edge OPEN (no wall) where it faces the floor or meets another
+          lobby — so the rotated lift lobby actually opens to the floor at its north and south ends. */}
+      {(() => {
+        const ov = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0) > 1;
+        const solids = cells.filter((c) => c.type !== "lobby").map((c) => c.rect).concat(stairs.map((s) => s.rect));
+        const lobbyWalls = (r) => {
+          const W = { top: false, bottom: false, left: false, right: false };
+          for (const o of solids) {
+            if (Math.abs((o.y + o.h) - r.y) < 1.2 && ov(o.x, o.x + o.w, r.x, r.x + r.w)) W.top = true;
+            if (Math.abs(o.y - (r.y + r.h)) < 1.2 && ov(o.x, o.x + o.w, r.x, r.x + r.w)) W.bottom = true;
+            if (Math.abs((o.x + o.w) - r.x) < 1.2 && ov(o.y, o.y + o.h, r.y, r.y + r.h)) W.left = true;
+            if (Math.abs(o.x - (r.x + r.w)) < 1.2 && ov(o.y, o.y + o.h, r.y, r.y + r.h)) W.right = true;
+          }
+          return W;
+        };
+        return cells.filter((c) => inView(c.rect)).map((c, i) => {
+          if (c.type === "elevator") return <Elevator key={i} r={c.rect} cars={c.cars} svc={c.svc} fs={c.fs} freight={c.freight} />;
+          if (c.type === "restroom") return <Washroom key={i} r={c.rect} men={c.key === "wcM"} entry={c.entry || wcEntry(c.rect)} wc={c.wc} lav={c.lav} urinals={c.urinals} />;
+          if (c.type === "lobby" && !c.vestibule) return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={c.name} walls={lobbyWalls(c.rect)} />;
+          return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={c.name} />;
+        });
+      })()}
       {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={perimeterEdge(s.rect)} />)}
       {/* legacy vestibule doors (other core types) */}
       {cells.filter((c) => (c.access === "shared" || c.access === "dedicated") && inView(c.rect)).map((c, i) => {
