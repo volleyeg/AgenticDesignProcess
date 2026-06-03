@@ -128,13 +128,17 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
 
     const wcCount = wcM ? (wcM.wc || 3) : 3, lavCount = wcM ? (wcM.lav || 3) : 3, uCount = wcM ? (wcM.urinals || 0) : 0;
     const washDepthNeed = Math.max(5 + Math.max(0, wcCount - 1) * 3, (lavCount + uCount) * 2.5) + 7;  // deeper fixture wall (60in stalls / 30in lav+urinal) + clear zone
-    // OPPOSED elevator banks once there are 4+ cars: two rows facing a central lobby halves the bank width
-    // (a 60ft single row becomes ~30ft). The lobby between needs >=8ft, so the band deepens to 2*carD+8.
+    // ELEVATOR LOBBY orientation (Eric / IBC 1016.2): the lobby must give two ways out. The clean form is a
+    // N-S corridor open at BOTH the north and south core edges, with cars flanking it (step off, go N or S).
+    // Used for <=8 cars; bigger banks fall back to opposed E-W rows (would need elevator zoning anyway).
     const nCars = bank ? (bank.cars || 1) : 0;
-    const opposed = nCars >= 4;
     const carW = bank && nCars ? bank.wFt / nCars : 0;
-    const nN = opposed ? Math.ceil(nCars / 2) : nCars, nS = opposed ? nCars - nN : 0;
-    const D = Math.max(sD, carD + lobbyD, washDepthNeed, opposed ? 2 * carD + 8 : 16, 16);  // band depth = deepest requirement
+    const lobbyW = Math.max(lobbyD, 9);
+    const rotated = nCars >= 2 && nCars <= 8;
+    const nW = rotated ? Math.ceil(nCars / 2) : nCars, nE = rotated ? nCars - nW : 0;
+    const opposed = !rotated && nCars >= 4;
+    const elevDepth = rotated ? Math.max(nW, nE) * carW : (opposed ? 2 * carD + 8 : 16);
+    const D = Math.max(sD, carD + lobbyD, washDepthNeed, elevDepth + (rotated ? 1 : 0), 16);  // band depth = deepest requirement
     const stairsLocal = [];
     let x = 0;
     const wcWidth = (c) => Math.max((c.wFt * c.dFt) / D, 13);     // >= 13ft: 5ft stall + 5ft turning circle + ~2ft lav, all clear
@@ -161,15 +165,25 @@ function layoutBands({ bank, lobby, washrooms, stairs, mep, boh, vest, egressExt
     // 3. Men's washroom — separates the BOH service lobby from the central pax lobby
     placeWC(wcM);
 
-    // 4. Passenger elevator bank + central lobby. 4+ cars -> two opposed rows (N + S) facing a central
-    //    lobby that reaches the floor through a spur; fewer cars -> a single row with the lobby in front.
-    if (opposed) {
-      const zoneW = nN > nS ? nN * carW : nN * carW + 6;          // spur lane when the rows are equal
-      bandRow({ ...bank, cars: nN, wFt: nN * carW }, 0, carD, x, nN * carW);                  // N row (carries FS marking)
-      bandRow({ ...bank, cars: nS, wFt: nS * carW, fs: 0 }, D - carD, carD, x, nS * carW);     // S row
-      if (lobby) bandRow(lobby, carD, D - 2 * carD, x, zoneW);                                  // lobby between the banks
-      bandRow({ ...lobby, key: "lobbyS", name: "" }, D - carD, carD, x + nS * carW, zoneW - nS * carW); // reaches the floor (S)
-      if (zoneW - nN * carW > 0.5) bandRow({ ...lobby, key: "lobbyN", name: "" }, 0, carD, x + nN * carW, zoneW - nN * carW); // fill (N)
+    // 4. Passenger elevators around a central N-S lobby that opens to the floor at the north AND south
+    //    edges (step off the lift, go north or south to two parts of the floor — and to both stairs).
+    if (rotated) {
+      // West cars (vertical stack), then the N-S lobby corridor, then East cars
+      bandRow({ ...bank, cars: nW, wFt: nW * carW }, 0, nW * carW, x, carD);
+      if (D - nW * carW > 0.5) bandRow({ ...lobby, key: "lobbyW", name: "" }, nW * carW, D - nW * carW, x, carD); // lobby fills below W cars
+      if (lobby) bandRow(lobby, 0, D, x + carD, lobbyW);                                       // central N-S lobby (open N + S)
+      if (nE > 0) {
+        bandRow({ ...bank, cars: nE, wFt: nE * carW, fs: 0 }, 0, nE * carW, x + carD + lobbyW, carD);
+        if (D - nE * carW > 0.5) bandRow({ ...lobby, key: "lobbyE", name: "" }, nE * carW, D - nE * carW, x + carD + lobbyW, carD);
+      }
+      x += carD + lobbyW + (nE > 0 ? carD : 0);
+    } else if (opposed) {
+      const zoneW = nW > nE ? nW * carW : nW * carW + 6;
+      bandRow({ ...bank, cars: nW, wFt: nW * carW }, 0, carD, x, nW * carW);
+      bandRow({ ...bank, cars: nE, wFt: nE * carW, fs: 0 }, D - carD, carD, x, nE * carW);
+      if (lobby) bandRow(lobby, carD, D - 2 * carD, x, zoneW);
+      bandRow({ ...lobby, key: "lobbyS", name: "" }, D - carD, carD, x + nE * carW, zoneW - nE * carW);
+      if (zoneW - nW * carW > 0.5) bandRow({ ...lobby, key: "lobbyN", name: "" }, 0, carD, x + nW * carW, zoneW - nW * carW);
       x += zoneW;
     } else {
       if (bank) bandRow(bank, 0, carD, x, bankW);
