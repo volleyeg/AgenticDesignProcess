@@ -296,36 +296,37 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
   // suite zone fills (bottom) — core + corridor get overdrawn on top so the tint shows only in leasable area
   const planFills = plan ? (
     <g>
-      {plan.suites.map((s, i) => { const p = R(s.zone); return <rect key={"sz" + i} x={p.x} y={p.y} width={p.w} height={p.h} fill={TENANT[i % 4]} opacity="0.8" />; })}
+      {plan.suites.flatMap((s, i) => s.rects.map((r, j) => { const p = R(r); return <rect key={"sz" + i + "_" + j} x={p.x} y={p.y} width={p.w} height={p.h} fill={TENANT[i % 4]} opacity="0.8" />; }))}
       {plan.corridor.map((r, i) => { const p = R(r); return <rect key={"co" + i} x={p.x} y={p.y} width={p.w} height={p.h} fill={CORRIDOR} />; })}
     </g>
   ) : null;
-  // a door leaf + swing arc on a horizontal corridor wall at (x,y); `swing` = N or S (which way it opens)
-  const tenantDoor = (x0, y0, swing, key) => {
-    const d = S(3.6), x = X(x0), y = Y(y0), s = swing === "N" ? -1 : 1;
-    const hx = x - d / 2, hy = y, lx = hx, ly = y + s * d, ax = x + d / 2, ay = y;
+  // a clean architectural door: gap in the wall + leaf at 90deg + quarter-circle swing arc. `swing` N/S = the
+  // side the leaf opens toward (egress side). Hinge on the lobby side so the leaf opens against exit traffic.
+  const tenantDoor = (x0, y0, swing, hingeLeft, key) => {
+    const d = S(3.5), x = X(x0), y = Y(y0), ny = swing === "N" ? -1 : 1;
+    const jx = hingeLeft ? x - d / 2 : x + d / 2, ox = hingeLeft ? x + d / 2 : x - d / 2; // hinge jamb, strike jamb
+    const tipy = y + ny * d;
+    const sweep = (ny < 0) === hingeLeft ? 1 : 0;
     return (
       <g key={key}>
-        <rect x={x - d / 2} y={y - 1.2} width={d} height={2.4} fill={SHEET} />
-        <line x1={hx} y1={hy} x2={lx} y2={ly} stroke={INK} strokeWidth="0.7" />
-        <path d={`M ${lx} ${ly} A ${d} ${d} 0 0 ${s > 0 ? 1 : 0} ${ax} ${ay}`} fill="none" stroke={INK} strokeWidth="0.4" />
+        <rect x={x - d / 2 - 0.6} y={y - wall / 2 - 0.8} width={d + 1.2} height={wall + 1.6} fill={SHEET} />
+        <line x1={jx} y1={y} x2={jx} y2={tipy} stroke={INK} strokeWidth="0.8" />
+        <path d={`M ${jx} ${tipy} A ${d} ${d} 0 0 ${sweep} ${ox} ${y}`} fill="none" stroke={INK} strokeWidth="0.45" />
       </g>
     );
   };
   const planOver = plan ? (
     <g>
-      {/* corridor walls: a wall line on each tenant-facing (long) edge of every leg */}
+      {/* corridor walls: a real poché wall on each leg's TENANT-facing edge (the core face is already walled) */}
       {plan.corridor.map((r, i) => {
-        const p = R(r);
-        return <g key={"cw" + i}>
-          <line x1={p.x} y1={p.y} x2={p.x + p.w} y2={p.y} stroke={POCHE} strokeWidth="1.6" />
-          <line x1={p.x} y1={p.y + p.h} x2={p.x + p.w} y2={p.y + p.h} stroke={POCHE} strokeWidth="1.6" />
-        </g>;
+        const p = R(r), south = r.y >= core.rect.y + core.rect.h - 1;
+        const wy = south ? p.y + p.h : p.y;                          // edge away from the core
+        return <rect key={"cw" + i} x={p.x} y={wy - wall / 2} width={p.w} height={wall} fill={POCHE} />;
       })}
       {/* demising walls */}
-      {plan.demising.map((d, i) => <line key={"dm" + i} x1={X(d.x1)} y1={Y(d.y1)} x2={X(d.x2)} y2={Y(d.y2)} stroke={POCHE} strokeWidth="2" />)}
-      {/* tenant entry / exit doors (swing per IBC 1010.1.2.1) */}
-      {plan.suites.flatMap((s) => s.doors.map((dr, j) => tenantDoor(dr.x, dr.y, dr.swing, "td" + s.id + "_" + j)))}
+      {plan.demising.map((d, i) => <line key={"dm" + i} x1={X(d.x1)} y1={Y(d.y1)} x2={X(d.x2)} y2={Y(d.y2)} stroke={POCHE} strokeWidth="2.4" />)}
+      {/* tenant entry / exit doors (swing per IBC 1010.1.2.1); hinge primary on the lobby side */}
+      {plan.suites.flatMap((s) => s.doors.map((dr, j) => tenantDoor(dr.x, dr.y, dr.swing, dr.x <= plan.lobbyX, "td" + s.id + "_" + j)))}
       {/* suite labels — name, rentable area, exit count */}
       {plan.suites.map((s, i) => {
         const p = R(s.zone), midX = p.x + p.w / 2, midY = p.y + p.h * (s.zone.y < core.rect.y ? 0.28 : 0.72);
@@ -372,7 +373,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
           return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={c.name} />;
         });
       })()}
-      {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={perimeterEdge(s.rect)} />)}
+      {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={plan && plan.corridor.length ? "bottom" : perimeterEdge(s.rect)} />)}
       {/* legacy vestibule doors (other core types) */}
       {cells.filter((c) => (c.access === "shared" || c.access === "dedicated") && inView(c.rect)).map((c, i) => {
         const v = vestFor(c); const e = v ? edgeToward(c.rect, v) : null; return e ? <Door key={"dv" + i} edge={e} r={c.rect} /> : null;
