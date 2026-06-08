@@ -380,15 +380,6 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
         });
       })()}
       {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={plan && plan.corridor.length ? "bottom" : perimeterEdge(s.rect)} />)}
-      {/* a north-edge stair door where a north suite's remote (2nd) exit lands on the trimmed north leg */}
-      {plan && plan.stairNorthDoor && stairs.length >= 2 && (() => {
-        const ss = [...stairs].sort((a, b) => a.rect.x - b.rect.x);
-        const w = ss[0], e = ss[ss.length - 1];
-        return <g>
-          {plan.stairNorthDoor.W && inView(w.rect) && <Door edge="top" r={w.rect} />}
-          {plan.stairNorthDoor.E && inView(e.rect) && <Door edge="top" r={e.rect} />}
-        </g>;
-      })()}
       {/* legacy vestibule doors (other core types) */}
       {cells.filter((c) => (c.access === "shared" || c.access === "dedicated") && inView(c.rect)).map((c, i) => {
         const v = vestFor(c); const e = v ? edgeToward(c.rect, v) : null; return e ? <Door key={"dv" + i} edge={e} r={c.rect} /> : null;

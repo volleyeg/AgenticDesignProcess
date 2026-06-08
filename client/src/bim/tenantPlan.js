@@ -140,7 +140,7 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
   // ---- pass 1: geometry, occupant load, exits, doors (provisional, full-extent legs as blockers) ----
   const fullBlockers = [cr, sLeg, nLeg];
   const lobX0 = paxLobby ? paxLobby.rect.x : lobbyX - 5, lobX1 = paxLobby ? paxLobby.rect.x + paxLobby.rect.w : lobbyX + 5;
-  const northDoorXs = [], stairNorthDoor = { W: false, E: false };
+  const northDoorXs = [];
   const prelim = suiteRects.map((rects, i) => {
     const zone = { x: Math.min(...rects.map((r) => r.x)), y: Math.min(...rects.map((r) => r.y)) };
     zone.w = Math.max(...rects.map((r) => r.x + r.w)) - zone.x; zone.h = Math.max(...rects.map((r) => r.y + r.h)) - zone.y;
@@ -158,7 +158,7 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     if (exits >= 2) {                                          // remote exit toward the far stair on this leg
       const remoteX = r1(west ? cr.x + 4 : cr.x + cr.w - 4);
       doors.push(bfDoor({ x: remoteX, wallY, swing, hingeTowardX: west ? cr.x : cr.x + cr.w, egress: occ >= 50, primary: false }));
-      if (!south) { northDoorXs.push(remoteX); stairNorthDoor[west ? "W" : "E"] = true; }
+      if (!south) northDoorXs.push(remoteX);
     }
     return { i, rects, zone, south, occ, exits, cp, trigger, doors };
   });
@@ -172,7 +172,6 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     const x1 = Math.min(cr.x + cr.w, Math.max(lobX1, ...northDoorXs) + 3);
     out.corridor.push(rect(x0, nY, x1 - x0, cr.y - nY));
   }
-  out.stairNorthDoor = stairNorthDoor;
   const blockers = [cr, ...out.corridor];
 
   // ---- pass 2: final rentable area (with the trimmed corridor), egress + BF notes ----
