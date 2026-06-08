@@ -300,18 +300,20 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
       {plan.corridor.map((r, i) => { const p = R(r); return <rect key={"co" + i} x={p.x} y={p.y} width={p.w} height={p.h} fill={CORRIDOR} />; })}
     </g>
   ) : null;
-  // a clean architectural door: gap in the wall + leaf at 90deg + quarter-circle swing arc. `swing` N/S = the
-  // side the leaf opens toward (egress side). Hinge on the lobby side so the leaf opens against exit traffic.
-  const tenantDoor = (x0, y0, swing, hingeLeft, key) => {
-    const d = S(3.5), x = X(x0), y = Y(y0), ny = swing === "N" ? -1 : 1;
-    const jx = hingeLeft ? x - d / 2 : x + d / 2, ox = hingeLeft ? x + d / 2 : x - d / 2; // hinge jamb, strike jamb
-    const tipy = y + ny * d;
-    const sweep = (ny < 0) === hingeLeft ? 1 : 0;
+  // a clean architectural door + its OBC 3.8.3.3 latch-side maneuvering clearances (600 mm pull / 300 mm push).
+  const tenantDoor = (dr, key) => {
+    const d = S(3.5), x = X(dr.x), y = Y(dr.y);
+    const hingeLeft = dr.hinge === "W", ny = dr.swing === "N" ? -1 : 1;
+    const jx = hingeLeft ? x - d / 2 : x + d / 2, ox = hingeLeft ? x + d / 2 : x - d / 2; // hinge / strike jamb
+    const tipy = y + ny * d, sweep = (ny < 0) === hingeLeft ? 1 : 0;
+    const cp = R(dr.clear.pull), cq = R(dr.clear.push), ok = dr.bfOK !== false, c = ok ? INK : "#b3261e";
     return (
       <g key={key}>
+        <rect x={cp.x} y={cp.y} width={cp.w} height={cp.h} fill={c} fillOpacity="0.05" stroke={c} strokeOpacity="0.4" strokeWidth="0.5" strokeDasharray="2 2" />
+        <rect x={cq.x} y={cq.y} width={cq.w} height={cq.h} fill="none" stroke={c} strokeOpacity="0.26" strokeWidth="0.5" strokeDasharray="1.5 2" />
         <rect x={x - d / 2 - 0.6} y={y - wall / 2 - 0.8} width={d + 1.2} height={wall + 1.6} fill={SHEET} />
-        <line x1={jx} y1={y} x2={jx} y2={tipy} stroke={INK} strokeWidth="0.8" />
-        <path d={`M ${jx} ${tipy} A ${d} ${d} 0 0 ${sweep} ${ox} ${y}`} fill="none" stroke={INK} strokeWidth="0.45" />
+        <line x1={jx} y1={y} x2={jx} y2={tipy} stroke={INK} strokeWidth="0.9" />
+        <path d={`M ${jx} ${tipy} A ${d} ${d} 0 0 ${sweep} ${ox} ${y}`} fill="none" stroke={INK} strokeWidth="0.5" />
       </g>
     );
   };
@@ -325,8 +327,8 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
       })}
       {/* demising walls */}
       {plan.demising.map((d, i) => <line key={"dm" + i} x1={X(d.x1)} y1={Y(d.y1)} x2={X(d.x2)} y2={Y(d.y2)} stroke={POCHE} strokeWidth="2.4" />)}
-      {/* tenant entry / exit doors (swing per IBC 1010.1.2.1); hinge primary on the lobby side */}
-      {plan.suites.flatMap((s) => s.doors.map((dr, j) => tenantDoor(dr.x, dr.y, dr.swing, dr.x <= plan.lobbyX, "td" + s.id + "_" + j)))}
+      {/* tenant entry / exit doors (hinge against the wall; swing per egress; OBC 3.8.3.3 clearances) */}
+      {plan.suites.flatMap((s) => s.doors.map((dr, j) => tenantDoor(dr, "td" + s.id + "_" + j)))}
       {/* suite labels — name, rentable area, exit count */}
       {plan.suites.map((s, i) => {
         const p = R(s.zone), midX = p.x + p.w / 2, midY = p.y + p.h * (s.zone.y < core.rect.y ? 0.28 : 0.72);

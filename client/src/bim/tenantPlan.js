@@ -20,6 +20,28 @@ const overlap = (a, b) => {
 const areaOf = (rs) => rs.reduce((s, r) => s + r.w * r.h, 0);
 const OCC_FACTOR = 150, ONE_EXIT_MAX_OCC = 49, COMMON_PATH_MAX = 100;
 
+// OBC 3.8.3.3 barrier-free doorway clearances (feet; code is in mm).
+const DOOR_LEAF = 3.5;          // ~1067 mm leaf → clear opening ~990 mm > 860 mm min (OBC 3.8.3.3.(1))
+const LATCH_PULL = 1.97;        // 600 mm latch-side clear where the door swings TOWARD the approach (pull side)
+const LATCH_PUSH = 0.98;        // 300 mm latch-side clear where it swings AWAY (push side)
+const MANEUVER_DEPTH = 4.92;    // 1500 mm level maneuvering area, perpendicular to the door
+
+// Build a barrier-free door: hinge toward `hingeTowardX` so the leaf opens back against the nearest perpendicular
+// wall; latch (handle) + maneuvering clearance fall on the open side. swing = leaf direction (egress side if >=50).
+function bfDoor({ x, wallY, swing, hingeTowardX, egress, primary }) {
+  const hinge = hingeTowardX <= x ? "W" : "E";
+  const jx = hinge === "W" ? x - DOOR_LEAF / 2 : x + DOOR_LEAF / 2;       // hinge jamb
+  const sx = hinge === "W" ? x + DOOR_LEAF / 2 : x - DOOR_LEAF / 2;       // strike/latch jamb
+  const sgn = hinge === "W" ? 1 : -1;                                     // latch clearance extends away from hinge
+  const span = (L) => { const end = sx + sgn * L; return { x: Math.min(jx, end), w: Math.abs(jx - end) }; };
+  const pullN = swing === "N", p = span(LATCH_PULL), q = span(LATCH_PUSH);
+  const clear = {
+    pull: rect(p.x, pullN ? wallY - MANEUVER_DEPTH : wallY, p.w, MANEUVER_DEPTH),   // 600 mm, swing side
+    push: rect(q.x, pullN ? wallY : wallY - MANEUVER_DEPTH, q.w, MANEUVER_DEPTH),   // 300 mm, opposite side
+  };
+  return { x: r1(x), y: r1(wallY), swing, hinge, egress, primary, clear };
+}
+
 // Farthest travel over a suite's real walkable area (its rects minus core & corridors), from source doors,
 // routing AROUND obstructions. Single source => common path of egress travel. Grid Dijkstra, 8-connected.
 function farthestTravel(rects, blockers, sources, cell = 3) {
@@ -129,7 +151,7 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     const west = (zone.x + zone.w / 2) < lobbyX;
     const primaryX = r1(west ? lobbyX - 2.2 : lobbyX + 2.2);     // flank the lobby opening
     const swing = occ >= 50 ? (south ? "N" : "S") : (south ? "S" : "N");
-    const primary = { x: primaryX, y: r1(wallY), swing, egress: occ >= 50, primary: true };
+    const primary = bfDoor({ x: primaryX, wallY, swing, hingeTowardX: lobbyX, egress: occ >= 50, primary: true });
     const commonPath = Math.round(farthestTravel(rects, blockers, [primary]));
     const byOcc = occ > ONE_EXIT_MAX_OCC, byPath = commonPath > COMMON_PATH_MAX;
     const exits = byOcc || byPath ? 2 : 1;
@@ -137,11 +159,15 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     const doors = [primary]; let travel = commonPath;
     if (exits >= 2) {                                            // remote exit toward the far stair on this leg
       const remoteX = r1(west ? cr.x + 4 : cr.x + cr.w - 4);
-      doors.push({ x: remoteX, y: r1(wallY), swing, egress: occ >= 50, primary: false });
+      doors.push(bfDoor({ x: remoteX, wallY, swing, hingeTowardX: west ? cr.x : cr.x + cr.w, egress: occ >= 50, primary: false }));
       travel = Math.round(farthestTravel(rects, blockers, doors));
     }
+    // OBC 3.8.3.3 check: latch-side maneuvering clearances must stay clear of the core and the floor plate
+    doors.forEach((dr) => { dr.bfOK = !overlap(dr.clear.pull, cr) && !overlap(dr.clear.push, cr) && dr.clear.pull.x >= -0.5 && dr.clear.pull.x + dr.clear.pull.w <= W + 0.5; });
+    const bfFail = doors.some((dr) => !dr.bfOK);
     if (exits >= 2) out.notes.push(`Tenant ${NAMES[i]} ${area.toLocaleString()} sf · ${occ} occ → 2 exits (${trigger}); travel to nearest exit ${travel} ft ≤ 300`);
     else if (commonPath) out.notes.push(`Tenant ${NAMES[i]} ${area.toLocaleString()} sf · ${occ} occ · 1 exit · common path ${commonPath} ft ≤ 100`);
+    if (bfFail) out.notes.push(`Tenant ${NAMES[i]}: door latch-side clearance is blocked — relocate or add a power operator (OBC 3.8.3.3)`);
     return { id: i, name: "Tenant " + NAMES[i], rects, zone, areaFt2: area, occLoad: occ, exitsRequired: exits, commonPathFt: commonPath, travelFt: travel, doors };
   });
   out.leasableFt2 = r1(out.suites.reduce((a, s) => a + s.areaFt2, 0));
