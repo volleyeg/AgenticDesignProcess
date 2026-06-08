@@ -200,45 +200,64 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
       { x1: 0, y1: cyMid, x2: cr.x, y2: cyMid }, { x1: cr.x + cr.w, y1: cyMid, x2: W, y2: cyMid },
     ];
   }
-  // ---- pass 1: geometry, occupant load, exits, doors (provisional, full-extent legs as blockers) ----
+  // ---- pass 1: split stair discharge (westmost stair → NORTH leg, the rest → SOUTH leg) so a deep suite's
+  // two exits diverge early — north half exits north, south half exits south. Then size doors + exits. ----
   const fullBlockers = [cr, sLeg, nLeg];
   const lobX0 = paxLobby ? paxLobby.rect.x : lobbyX - 5, lobX1 = paxLobby ? paxLobby.rect.x + paxLobby.rect.w : lobbyX + 5;
-  const exitPts = (stairs || []).map((s) => ({ x: s.rect.x + s.rect.w / 2, y: s.rect.y + s.rect.h }));   // stair discharge doors (south, into the S leg)
+  const sortedStairs = (stairs || []).slice().sort((a, b) => a.rect.x - b.rect.x);
+  const northStair = sortedStairs[0] || null;                  // a switchback stair discharges ONE end; westmost → north
+  const northStairX = northStair ? r1(northStair.rect.x + northStair.rect.w / 2) : null;
+  const exitPts = (stairs || []).map((s) => ({ x: s.rect.x + s.rect.w / 2, y: northStair && s === northStair ? cr.y : cr.y + cr.h }));
+  out.stairDischargeNorthX = northStairX;                      // renderer: this stair's floor-landing door faces north
   const fullCorr = [sLeg, nLeg], lobbyRect = paxLobby ? paxLobby.rect : null;
   const northDoorXs = [];
+
   const prelim = suiteRects.map((rects, i) => {
     const zone = { x: Math.min(...rects.map((r) => r.x)), y: Math.min(...rects.map((r) => r.y)) };
     zone.w = Math.max(...rects.map((r) => r.x + r.w)) - zone.x; zone.h = Math.max(...rects.map((r) => r.y + r.h)) - zone.y;
     let areaF = areaOf(rects); for (const b of fullBlockers) for (const r of rects) areaF -= overlap(r, b);
     const occ = Math.ceil(r1(areaF) / OCC_FACTOR);
-    const south = zone.y + zone.h > sWallY + 0.5, west = (zone.x + zone.w / 2) < lobbyX;
-    const wallY = south ? sWallY : nWallY;
-    const swing = occ >= 50 ? (south ? "N" : "S") : (south ? "S" : "N");
-    const primary = bfDoor({ x: r1(west ? lobbyX - 2.2 : lobbyX + 2.2), wallY, swing, hingeTowardX: lobbyX, egress: occ >= 50, primary: true });
-    // common path with a SINGLE exit access doorway decides whether a 2nd exit is required (IBC 1006.2.1)
-    const e1 = suiteEgress(rects, [primary], fullCorr, lobbyRect, exitPts, cr);
-    const exits = occ > ONE_EXIT_MAX_OCC || e1.commonPath > COMMON_PATH_MAX ? 2 : 1;
-    const trigger = occ > ONE_EXIT_MAX_OCC && e1.commonPath > COMMON_PATH_MAX ? "occ load + common path" : occ > ONE_EXIT_MAX_OCC ? "occ load > 49" : e1.commonPath > COMMON_PATH_MAX ? `single-exit common path ${e1.commonPath} ft > 100` : "";
-    const doors = [primary];
-    if (!south) northDoorXs.push(primary.x);
-    if (exits >= 2) {                                          // remote exit toward the far stair on this leg
-      const remoteX = r1(west ? cr.x + 4 : cr.x + cr.w - 4);
-      doors.push(bfDoor({ x: remoteX, wallY, swing, hingeTowardX: west ? cr.x : cr.x + cr.w, egress: occ >= 50, primary: false }));
-      if (!south) northDoorXs.push(remoteX);
+    const west = (zone.x + zone.w / 2) < lobbyX;
+    const touchesS = zone.y + zone.h > sWallY + 0.5, touchesN = zone.y < nY - 0.5, fullHeight = touchesS && touchesN;
+    const lobDoorX = west ? lobbyX - 2.2 : lobbyX + 2.2;
+    const mkDoor = (x, wallY, onSouthLeg, primary) => bfDoor({ x: r1(x), wallY, swing: occ >= 50 ? (onSouthLeg ? "N" : "S") : (onSouthLeg ? "S" : "N"), hingeTowardX: lobbyX, egress: occ >= 50, primary });
+    const frontage = (onSouthLeg) => {                         // suite's door-able x-range on a leg (over the core)
+      const rs = rects.filter((r) => (onSouthLeg ? r.y + r.h > sWallY : r.y < cr.y));
+      if (!rs.length) return [lobbyX - 2, lobbyX + 2];
+      return [Math.max(cr.x + 2, Math.min(...rs.map((r) => r.x)) + 0.5), Math.min(cr.x + cr.w - 2, Math.max(...rs.map((r) => r.x + r.w)) - 0.5)];
+    };
+    let doors, exits, trigger, eg, hasN = false, hasS = false;
+    if (fullHeight) {                                          // door on EACH leg → divergent N/S egress
+      const sd = mkDoor(lobDoorX, sWallY, true, true);         // main entry at the lobby (elevator exposure) + south egress
+      const [nf0, nf1] = frontage(false);
+      const nd = mkDoor(Math.min(nf1, Math.max(nf0, northStairX != null ? northStairX : lobDoorX)), nWallY, false, false);  // north egress toward the north stair
+      doors = [sd, nd]; northDoorXs.push(nd.x); hasS = hasN = true;
+      exits = 2; trigger = "full-height — divergent N/S exits";
+      eg = suiteEgress(rects, doors, fullCorr, lobbyRect, exitPts, cr);
+    } else {                                                   // quadrant fronts a single leg
+      const onS = touchesS, wallY = onS ? sWallY : nWallY;
+      const primary = mkDoor(lobDoorX, wallY, onS, true);
+      doors = [primary]; if (onS) hasS = true; else { hasN = true; northDoorXs.push(primary.x); }
+      const e1 = suiteEgress(rects, [primary], fullCorr, lobbyRect, exitPts, cr);
+      exits = occ > ONE_EXIT_MAX_OCC || e1.commonPath > COMMON_PATH_MAX ? 2 : 1;
+      trigger = occ > ONE_EXIT_MAX_OCC && e1.commonPath > COMMON_PATH_MAX ? "occ load + common path" : occ > ONE_EXIT_MAX_OCC ? "occ load > 49" : e1.commonPath > COMMON_PATH_MAX ? `single-exit common path ${e1.commonPath} ft > 100` : "";
+      if (exits >= 2) {                                        // remote at the far end of the frontage (away from the lobby)
+        const [f0, f1] = frontage(onS);
+        const remoteX = Math.abs(f0 - lobDoorX) > Math.abs(f1 - lobDoorX) ? f0 : f1;
+        const rd = mkDoor(remoteX, wallY, onS, false);
+        doors.push(rd); if (!onS) northDoorXs.push(rd.x);
+      }
+      eg = exits >= 2 ? suiteEgress(rects, doors, fullCorr, lobbyRect, exitPts, cr) : e1;
     }
-    // achieved egress with the doors actually provided: common path drops once 2 separated doorways exist
-    const eg = exits >= 2 ? suiteEgress(rects, doors, fullCorr, lobbyRect, exitPts, cr) : e1;
-    return { i, rects, zone, south, occ, exits, trigger, doors, commonPath: eg.commonPath, travel: eg.travel };
+    return { i, rects, zone, occ, exits, trigger, doors, hasN, hasS, commonPath: eg.commonPath, travel: eg.travel };
   });
 
-  // ---- corridor legs: S leg spans the core (stairs cap both ends); N leg TRIMMED to its used extent ----
-  // A north suite needing only one exit reaches egress through the lobby — no full leg, no dead-end over a tenant.
-  const anyN = prelim.some((p) => !p.south);
-  if (prelim.some((p) => p.south)) out.corridor.push(sLeg);
-  if (anyN) {
-    const x0 = Math.max(cr.x, Math.min(lobX0, ...northDoorXs) - 3);
+  // ---- corridor legs: S leg spans the core (E stair discharges south at its east end). N leg reaches the
+  // north-discharging (west) stair and covers the north doors; east surplus trimmed back to the tenants. ----
+  if (prelim.some((p) => p.hasS)) out.corridor.push(sLeg);
+  if (prelim.some((p) => p.hasN)) {
     const x1 = Math.min(cr.x + cr.w, Math.max(lobX1, ...northDoorXs) + 3);
-    out.corridor.push(rect(x0, nY, x1 - x0, cr.y - nY));
+    out.corridor.push(rect(cr.x, nY, x1 - cr.x, cr.y - nY));    // x0 = cr.x so the leg meets the north stair
   }
   const blockers = [cr, ...out.corridor];
 

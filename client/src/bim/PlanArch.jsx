@@ -379,7 +379,13 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
           return <Room key={i} r={c.rect} fill={TINT[c.type] || TINT.support} label={c.name} />;
         });
       })()}
-      {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={plan && plan.corridor.length ? "bottom" : perimeterEdge(s.rect)} />)}
+      {stairs.filter((s) => inView(s.rect)).map((s, i) => {
+        const cx = s.rect.x + s.rect.w / 2;
+        const edge = plan && plan.corridor.length
+          ? (plan.stairDischargeNorthX != null && Math.abs(cx - plan.stairDischargeNorthX) < 1 ? "top" : "bottom")
+          : perimeterEdge(s.rect);
+        return <Stair key={"st" + i} r={s.rect} doorEdge={edge} />;
+      })}
       {/* legacy vestibule doors (other core types) */}
       {cells.filter((c) => (c.access === "shared" || c.access === "dedicated") && inView(c.rect)).map((c, i) => {
         const v = vestFor(c); const e = v ? edgeToward(c.rect, v) : null; return e ? <Door key={"dv" + i} edge={e} r={c.rect} /> : null;
