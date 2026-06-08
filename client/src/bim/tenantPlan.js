@@ -137,38 +137,54 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
       { x1: 0, y1: cyMid, x2: cr.x, y2: cyMid }, { x1: cr.x + cr.w, y1: cyMid, x2: W, y2: cyMid },
     ];
   }
-  if (needS) out.corridor.push(sLeg);
-  if (needN) out.corridor.push(nLeg);
-  const blockers = [cr, ...out.corridor];
-
-  out.suites = suiteRects.map((rects, i) => {
+  // ---- pass 1: geometry, occupant load, exits, doors (provisional, full-extent legs as blockers) ----
+  const fullBlockers = [cr, sLeg, nLeg];
+  const lobX0 = paxLobby ? paxLobby.rect.x : lobbyX - 5, lobX1 = paxLobby ? paxLobby.rect.x + paxLobby.rect.w : lobbyX + 5;
+  const northDoorXs = [], stairNorthDoor = { W: false, E: false };
+  const prelim = suiteRects.map((rects, i) => {
     const zone = { x: Math.min(...rects.map((r) => r.x)), y: Math.min(...rects.map((r) => r.y)) };
     zone.w = Math.max(...rects.map((r) => r.x + r.w)) - zone.x; zone.h = Math.max(...rects.map((r) => r.y + r.h)) - zone.y;
-    let area = areaOf(rects); for (const b of blockers) for (const r of rects) area -= overlap(r, b); area = r1(area);
-    const occ = Math.ceil(area / OCC_FACTOR);
-    const south = zone.y + zone.h > sWallY + 0.5;
+    let areaF = areaOf(rects); for (const b of fullBlockers) for (const r of rects) areaF -= overlap(r, b);
+    const occ = Math.ceil(r1(areaF) / OCC_FACTOR);
+    const south = zone.y + zone.h > sWallY + 0.5, west = (zone.x + zone.w / 2) < lobbyX;
     const wallY = south ? sWallY : nWallY;
-    const west = (zone.x + zone.w / 2) < lobbyX;
-    const primaryX = r1(west ? lobbyX - 2.2 : lobbyX + 2.2);     // flank the lobby opening
     const swing = occ >= 50 ? (south ? "N" : "S") : (south ? "S" : "N");
-    const primary = bfDoor({ x: primaryX, wallY, swing, hingeTowardX: lobbyX, egress: occ >= 50, primary: true });
-    const commonPath = Math.round(farthestTravel(rects, blockers, [primary]));
-    const byOcc = occ > ONE_EXIT_MAX_OCC, byPath = commonPath > COMMON_PATH_MAX;
-    const exits = byOcc || byPath ? 2 : 1;
-    const trigger = byOcc && byPath ? "occ load + common path" : byOcc ? "occ load > 49" : byPath ? `common path ${commonPath} ft > 100` : "";
-    const doors = [primary]; let travel = commonPath;
-    if (exits >= 2) {                                            // remote exit toward the far stair on this leg
+    const primary = bfDoor({ x: r1(west ? lobbyX - 2.2 : lobbyX + 2.2), wallY, swing, hingeTowardX: lobbyX, egress: occ >= 50, primary: true });
+    const cp = Math.round(farthestTravel(rects, fullBlockers, [primary]));
+    const exits = occ > ONE_EXIT_MAX_OCC || cp > COMMON_PATH_MAX ? 2 : 1;
+    const trigger = occ > ONE_EXIT_MAX_OCC && cp > COMMON_PATH_MAX ? "occ load + common path" : occ > ONE_EXIT_MAX_OCC ? "occ load > 49" : cp > COMMON_PATH_MAX ? `common path ${cp} ft > 100` : "";
+    const doors = [primary];
+    if (!south) northDoorXs.push(primary.x);
+    if (exits >= 2) {                                          // remote exit toward the far stair on this leg
       const remoteX = r1(west ? cr.x + 4 : cr.x + cr.w - 4);
       doors.push(bfDoor({ x: remoteX, wallY, swing, hingeTowardX: west ? cr.x : cr.x + cr.w, egress: occ >= 50, primary: false }));
-      travel = Math.round(farthestTravel(rects, blockers, doors));
+      if (!south) { northDoorXs.push(remoteX); stairNorthDoor[west ? "W" : "E"] = true; }
     }
-    // OBC 3.8.3.3 check: latch-side maneuvering clearances must stay clear of the core and the floor plate
-    doors.forEach((dr) => { dr.bfOK = !overlap(dr.clear.pull, cr) && !overlap(dr.clear.push, cr) && dr.clear.pull.x >= -0.5 && dr.clear.pull.x + dr.clear.pull.w <= W + 0.5; });
-    const bfFail = doors.some((dr) => !dr.bfOK);
-    if (exits >= 2) out.notes.push(`Tenant ${NAMES[i]} ${area.toLocaleString()} sf · ${occ} occ → 2 exits (${trigger}); travel to nearest exit ${travel} ft ≤ 300`);
-    else if (commonPath) out.notes.push(`Tenant ${NAMES[i]} ${area.toLocaleString()} sf · ${occ} occ · 1 exit · common path ${commonPath} ft ≤ 100`);
-    if (bfFail) out.notes.push(`Tenant ${NAMES[i]}: door latch-side clearance is blocked — relocate or add a power operator (OBC 3.8.3.3)`);
-    return { id: i, name: "Tenant " + NAMES[i], rects, zone, areaFt2: area, occLoad: occ, exitsRequired: exits, commonPathFt: commonPath, travelFt: travel, doors };
+    return { i, rects, zone, south, occ, exits, cp, trigger, doors };
+  });
+
+  // ---- corridor legs: S leg spans the core (stairs cap both ends); N leg TRIMMED to its used extent ----
+  // A north suite needing only one exit reaches egress through the lobby — no full leg, no dead-end over a tenant.
+  const anyN = prelim.some((p) => !p.south);
+  if (prelim.some((p) => p.south)) out.corridor.push(sLeg);
+  if (anyN) {
+    const x0 = Math.max(cr.x, Math.min(lobX0, ...northDoorXs) - 3);
+    const x1 = Math.min(cr.x + cr.w, Math.max(lobX1, ...northDoorXs) + 3);
+    out.corridor.push(rect(x0, nY, x1 - x0, cr.y - nY));
+  }
+  out.stairNorthDoor = stairNorthDoor;
+  const blockers = [cr, ...out.corridor];
+
+  // ---- pass 2: final rentable area (with the trimmed corridor), egress + BF notes ----
+  out.suites = prelim.map((p) => {
+    let area = areaOf(p.rects); for (const b of blockers) for (const r of p.rects) area -= overlap(r, b); area = r1(area);
+    const occ = Math.ceil(area / OCC_FACTOR);
+    const travel = p.exits >= 2 ? Math.round(farthestTravel(p.rects, blockers, p.doors)) : p.cp;
+    p.doors.forEach((dr) => { dr.bfOK = !overlap(dr.clear.pull, cr) && !overlap(dr.clear.push, cr) && dr.clear.pull.x >= -0.5 && dr.clear.pull.x + dr.clear.pull.w <= W + 0.5; });
+    if (p.exits >= 2) out.notes.push(`Tenant ${NAMES[p.i]} ${area.toLocaleString()} sf · ${occ} occ → 2 exits (${p.trigger}); travel to nearest exit ${travel} ft ≤ 300`);
+    else if (p.cp) out.notes.push(`Tenant ${NAMES[p.i]} ${area.toLocaleString()} sf · ${occ} occ · 1 exit · common path ${p.cp} ft ≤ 100`);
+    if (p.doors.some((dr) => !dr.bfOK)) out.notes.push(`Tenant ${NAMES[p.i]}: door latch-side clearance blocked — relocate or add a power operator (OBC 3.8.3.3)`);
+    return { id: p.i, name: "Tenant " + NAMES[p.i], rects: p.rects, zone: p.zone, areaFt2: area, occLoad: occ, exitsRequired: p.exits, commonPathFt: p.cp, travelFt: travel, doors: p.doors };
   });
   out.leasableFt2 = r1(out.suites.reduce((a, s) => a + s.areaFt2, 0));
   return out;

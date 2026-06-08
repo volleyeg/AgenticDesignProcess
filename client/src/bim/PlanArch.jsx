@@ -319,11 +319,15 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
   };
   const planOver = plan ? (
     <g>
-      {/* corridor walls: a real poché wall on each leg's TENANT-facing edge (the core face is already walled) */}
+      {/* corridor walls: poché on the tenant-facing edge + both short ends (core face has the lobby + stair doors) */}
       {plan.corridor.map((r, i) => {
         const p = R(r), south = r.y >= core.rect.y + core.rect.h - 1;
-        const wy = south ? p.y + p.h : p.y;                          // edge away from the core
-        return <rect key={"cw" + i} x={p.x} y={wy - wall / 2} width={p.w} height={wall} fill={POCHE} />;
+        const wy = south ? p.y + p.h : p.y;
+        return <g key={"cw" + i}>
+          <rect x={p.x} y={wy - wall / 2} width={p.w} height={wall} fill={POCHE} />
+          <rect x={p.x - wall / 2} y={p.y} width={wall} height={p.h} fill={POCHE} />
+          <rect x={p.x + p.w - wall / 2} y={p.y} width={wall} height={p.h} fill={POCHE} />
+        </g>;
       })}
       {/* demising walls */}
       {plan.demising.map((d, i) => <line key={"dm" + i} x1={X(d.x1)} y1={Y(d.y1)} x2={X(d.x2)} y2={Y(d.y2)} stroke={POCHE} strokeWidth="2.4" />)}
@@ -376,6 +380,15 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
         });
       })()}
       {stairs.filter((s) => inView(s.rect)).map((s, i) => <Stair key={"st" + i} r={s.rect} doorEdge={plan && plan.corridor.length ? "bottom" : perimeterEdge(s.rect)} />)}
+      {/* a north-edge stair door where a north suite's remote (2nd) exit lands on the trimmed north leg */}
+      {plan && plan.stairNorthDoor && stairs.length >= 2 && (() => {
+        const ss = [...stairs].sort((a, b) => a.rect.x - b.rect.x);
+        const w = ss[0], e = ss[ss.length - 1];
+        return <g>
+          {plan.stairNorthDoor.W && inView(w.rect) && <Door edge="top" r={w.rect} />}
+          {plan.stairNorthDoor.E && inView(e.rect) && <Door edge="top" r={e.rect} />}
+        </g>;
+      })()}
       {/* legacy vestibule doors (other core types) */}
       {cells.filter((c) => (c.access === "shared" || c.access === "dedicated") && inView(c.rect)).map((c, i) => {
         const v = vestFor(c); const e = v ? edgeToward(c.rect, v) : null; return e ? <Door key={"dv" + i} edge={e} r={c.rect} /> : null;
