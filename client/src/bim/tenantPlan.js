@@ -81,6 +81,69 @@ function farthestTravel(rects, blockers, sources, cell = 3) {
   return m;
 }
 
+// Common path of egress travel MEASURED THROUGH THE CORRIDOR NETWORK (IBC defn): distance from the most remote
+// point to where two distinct paths to two exits first become available. Grids the suite + corridor legs + lobby;
+// the suite connects to the corridor ONLY at its door(s); stairs are the exits. With shortest-path fields dA, dB
+// from the two exits (and dAB between them), the shared-prefix length to a point R is (dA[R]+dB[R]-dAB)/2 — the
+// travel before the routes diverge. Returns the worst-case common path and the exit-access travel distance.
+function suiteEgress(rects, doors, corridorRects, lobby, exits, cr, cell = 3) {
+  if (!exits.length || !doors.length) return { commonPath: 0, travel: 0 };
+  const zones = [...rects, ...corridorRects]; if (lobby) zones.push(lobby);
+  const pts = exits.concat(doors.map((d) => ({ x: d.x, y: d.y })));
+  const x0 = Math.min(...zones.map((r) => r.x), ...pts.map((p) => p.x)), y0 = Math.min(...zones.map((r) => r.y), ...pts.map((p) => p.y));
+  const x1 = Math.max(...zones.map((r) => r.x + r.w), ...pts.map((p) => p.x)), y1 = Math.max(...zones.map((r) => r.y + r.h), ...pts.map((p) => p.y));
+  const nx = Math.max(2, Math.round((x1 - x0) / cell)), ny = Math.max(2, Math.round((y1 - y0) / cell));
+  const cw = (x1 - x0) / nx, ch = (y1 - y0) / ny, N = nx * ny;
+  const px = (i) => x0 + (i + 0.5) * cw, py = (j) => y0 + (j + 0.5) * ch;
+  const inR = (x, y, r) => x >= r.x - 0.01 && x <= r.x + r.w + 0.01 && y >= r.y - 0.01 && y <= r.y + r.h + 0.01;
+  const cls = new Uint8Array(N);                                  // 0 blocked · 1 suite · 2 corridor/lobby
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const x = px(i), y = py(j), k = j * nx + i;
+    if (lobby && inR(x, y, lobby)) cls[k] = 2;                    // lobby is walkable egress (inside the core)
+    else if (inR(x, y, cr)) cls[k] = 0;                          // rest of the core is solid
+    else if (corridorRects.some((c) => inR(x, y, c))) cls[k] = 2;
+    else if (rects.some((r) => inR(x, y, r))) cls[k] = 1;
+    else cls[k] = 0;
+  }
+  const nearest = (x, y, want) => { let bk = -1, bd = Infinity; for (let k = 0; k < N; k++) if (cls[k] === want) { const d = Math.hypot(px(k % nx) - x, py((k / nx) | 0) - y); if (d < bd) { bd = d; bk = k; } } return bk; };
+  const portal = new Map();                                       // suite<->corridor links, only at doors
+  const link = (a, b) => { if (a < 0 || b < 0) return; if (!portal.has(a)) portal.set(a, []); portal.get(a).push(b); if (!portal.has(b)) portal.set(b, []); portal.get(b).push(a); };
+  for (const d of doors) link(nearest(d.x, d.y, 1), nearest(d.x, d.y, 2));
+  const exitCells = exits.map((e) => nearest(e.x, e.y, 2)).filter((k) => k >= 0);
+  if (!exitCells.length) return { commonPath: 0, travel: 0 };
+  const diag = Math.hypot(cw, ch), orth = (cw + ch) / 2;
+  const run = (src) => {
+    const dist = new Float64Array(N).fill(Infinity), heap = [];
+    const up = (c) => { while (c > 0) { const p = (c - 1) >> 1; if (heap[p][0] <= heap[c][0]) break;[heap[p], heap[c]] = [heap[c], heap[p]]; c = p; } };
+    const push = (d, k) => { heap.push([d, k]); up(heap.length - 1); };
+    const pop = () => { const t = heap[0], l = heap.pop(); if (heap.length) { heap[0] = l; let c = 0; for (; ;) { const a = 2 * c + 1, b = 2 * c + 2; let s = c; if (a < heap.length && heap[a][0] < heap[s][0]) s = a; if (b < heap.length && heap[b][0] < heap[s][0]) s = b; if (s === c) break;[heap[s], heap[c]] = [heap[c], heap[s]]; c = s; } } return t; };
+    dist[src] = 0; push(0, src);
+    while (heap.length) {
+      const [d, k] = pop(); if (d > dist[k]) continue;
+      const i = k % nx, j = (k / nx) | 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const ni = i + di, nj = j + dj; if (ni < 0 || nj < 0 || ni >= nx || nj >= ny) continue;
+        const nk = nj * nx + ni; if (cls[nk] === 0 || cls[nk] !== cls[k]) continue;   // same region only
+        const nd = d + (di && dj ? diag : orth); if (nd < dist[nk]) { dist[nk] = nd; push(nd, nk); }
+      }
+      const pl = portal.get(k); if (pl) for (const nk of pl) { const nd = d + Math.hypot(px(nk % nx) - px(i), py(((nk / nx) | 0)) - py(j)); if (nd < dist[nk]) { dist[nk] = nd; push(nd, nk); } }
+    }
+    return dist;
+  };
+  const dA = run(exitCells[0]);
+  const dB = exitCells.length >= 2 ? run(exitCells[1]) : dA;
+  const dAB = exitCells.length >= 2 ? dA[exitCells[1]] : 0;
+  let cp = 0, tr = 0;
+  for (let k = 0; k < N; k++) if (cls[k] === 1) {
+    const a = dA[k], b = dB[k];
+    if (isFinite(a) && isFinite(b)) { cp = Math.max(cp, (a + b - dAB) / 2); tr = Math.max(tr, Math.min(a, b)); }
+    else if (isFinite(a)) { cp = Math.max(cp, a); tr = Math.max(tr, a); }
+    else if (isFinite(b)) { cp = Math.max(cp, b); tr = Math.max(tr, b); }
+  }
+  return { commonPath: Math.max(0, Math.round(cp)), travel: Math.round(tr) };
+}
+
 export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [] }) {
   const cr = core.rect;
   const n = Math.max(1, Math.min(4, tenants | 0));
@@ -140,6 +203,8 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
   // ---- pass 1: geometry, occupant load, exits, doors (provisional, full-extent legs as blockers) ----
   const fullBlockers = [cr, sLeg, nLeg];
   const lobX0 = paxLobby ? paxLobby.rect.x : lobbyX - 5, lobX1 = paxLobby ? paxLobby.rect.x + paxLobby.rect.w : lobbyX + 5;
+  const exitPts = (stairs || []).map((s) => ({ x: s.rect.x + s.rect.w / 2, y: s.rect.y + s.rect.h }));   // stair discharge doors (south, into the S leg)
+  const fullCorr = [sLeg, nLeg], lobbyRect = paxLobby ? paxLobby.rect : null;
   const northDoorXs = [];
   const prelim = suiteRects.map((rects, i) => {
     const zone = { x: Math.min(...rects.map((r) => r.x)), y: Math.min(...rects.map((r) => r.y)) };
@@ -150,9 +215,10 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     const wallY = south ? sWallY : nWallY;
     const swing = occ >= 50 ? (south ? "N" : "S") : (south ? "S" : "N");
     const primary = bfDoor({ x: r1(west ? lobbyX - 2.2 : lobbyX + 2.2), wallY, swing, hingeTowardX: lobbyX, egress: occ >= 50, primary: true });
-    const cp = Math.round(farthestTravel(rects, fullBlockers, [primary]));
-    const exits = occ > ONE_EXIT_MAX_OCC || cp > COMMON_PATH_MAX ? 2 : 1;
-    const trigger = occ > ONE_EXIT_MAX_OCC && cp > COMMON_PATH_MAX ? "occ load + common path" : occ > ONE_EXIT_MAX_OCC ? "occ load > 49" : cp > COMMON_PATH_MAX ? `common path ${cp} ft > 100` : "";
+    // common path with a SINGLE exit access doorway decides whether a 2nd exit is required (IBC 1006.2.1)
+    const e1 = suiteEgress(rects, [primary], fullCorr, lobbyRect, exitPts, cr);
+    const exits = occ > ONE_EXIT_MAX_OCC || e1.commonPath > COMMON_PATH_MAX ? 2 : 1;
+    const trigger = occ > ONE_EXIT_MAX_OCC && e1.commonPath > COMMON_PATH_MAX ? "occ load + common path" : occ > ONE_EXIT_MAX_OCC ? "occ load > 49" : e1.commonPath > COMMON_PATH_MAX ? `single-exit common path ${e1.commonPath} ft > 100` : "";
     const doors = [primary];
     if (!south) northDoorXs.push(primary.x);
     if (exits >= 2) {                                          // remote exit toward the far stair on this leg
@@ -160,7 +226,9 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
       doors.push(bfDoor({ x: remoteX, wallY, swing, hingeTowardX: west ? cr.x : cr.x + cr.w, egress: occ >= 50, primary: false }));
       if (!south) northDoorXs.push(remoteX);
     }
-    return { i, rects, zone, south, occ, exits, cp, trigger, doors };
+    // achieved egress with the doors actually provided: common path drops once 2 separated doorways exist
+    const eg = exits >= 2 ? suiteEgress(rects, doors, fullCorr, lobbyRect, exitPts, cr) : e1;
+    return { i, rects, zone, south, occ, exits, trigger, doors, commonPath: eg.commonPath, travel: eg.travel };
   });
 
   // ---- corridor legs: S leg spans the core (stairs cap both ends); N leg TRIMMED to its used extent ----
@@ -178,12 +246,13 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
   out.suites = prelim.map((p) => {
     let area = areaOf(p.rects); for (const b of blockers) for (const r of p.rects) area -= overlap(r, b); area = r1(area);
     const occ = Math.ceil(area / OCC_FACTOR);
-    const travel = p.exits >= 2 ? Math.round(farthestTravel(p.rects, blockers, p.doors)) : p.cp;
     p.doors.forEach((dr) => { dr.bfOK = !overlap(dr.clear.pull, cr) && !overlap(dr.clear.push, cr) && dr.clear.pull.x >= -0.5 && dr.clear.pull.x + dr.clear.pull.w <= W + 0.5; });
-    if (p.exits >= 2) out.notes.push(`Tenant ${NAMES[p.i]} ${area.toLocaleString()} sf · ${occ} occ → 2 exits (${p.trigger}); travel to nearest exit ${travel} ft ≤ 300`);
-    else if (p.cp) out.notes.push(`Tenant ${NAMES[p.i]} ${area.toLocaleString()} sf · ${occ} occ · 1 exit · common path ${p.cp} ft ≤ 100`);
+    if (p.exits >= 2) out.notes.push(`Tenant ${NAMES[p.i]} ${area.toLocaleString()} sf · ${occ} occ → 2 exits (${p.trigger}); common path ${p.commonPath} ft, travel ${p.travel} ft ≤ 300`);
+    else out.notes.push(`Tenant ${NAMES[p.i]} ${area.toLocaleString()} sf · ${occ} occ · 1 exit · common path ${p.commonPath} ft ≤ 100`);
+    if (p.commonPath > COMMON_PATH_MAX) out.notes.push(`Tenant ${NAMES[p.i]}: common path ${p.commonPath} ft still > 100 — separate the two exits further (IBC 1006.2.1)`);
+    if (p.travel > 300) out.notes.push(`Tenant ${NAMES[p.i]}: travel ${p.travel} ft > 300 — needs a closer exit (IBC 1017)`);
     if (p.doors.some((dr) => !dr.bfOK)) out.notes.push(`Tenant ${NAMES[p.i]}: door latch-side clearance blocked — relocate or add a power operator (OBC 3.8.3.3)`);
-    return { id: p.i, name: "Tenant " + NAMES[p.i], rects: p.rects, zone: p.zone, areaFt2: area, occLoad: occ, exitsRequired: p.exits, commonPathFt: p.cp, travelFt: travel, doors: p.doors };
+    return { id: p.i, name: "Tenant " + NAMES[p.i], rects: p.rects, zone: p.zone, areaFt2: area, occLoad: occ, exitsRequired: p.exits, commonPathFt: p.commonPath, travelFt: p.travel, doors: p.doors };
   });
   out.leasableFt2 = r1(out.suites.reduce((a, s) => a + s.areaFt2, 0));
   return out;
