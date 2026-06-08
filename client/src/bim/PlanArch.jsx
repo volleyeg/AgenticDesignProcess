@@ -15,7 +15,7 @@ const CORRIDOR = "#eae5d9";                                  // racetrack corrid
 const SHEET = "#f5f2ea", INK = "#1f2024", POCHE = "#2b2d31", LINE = "#9aa0a6", THIN = "#c7c2b6";
 const colLabel = (i) => String.fromCharCode(65 + i); // A,B,C...
 
-export default function PlanArch({ shell, region = "floor", maxW = 720, tenants = 1 }) {
+export default function PlanArch({ shell, region = "floor", maxW = 720, tenants = 1, plan: planProp = null }) {
   if (!shell || !shell.core) return null;
   const { W, H, core, grid, facade } = shell;
   const cells = core.components || [];
@@ -290,8 +290,8 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
     </g>
   ) : null;
 
-  // ---- tenant test-fit (floor mode): minimal corridor + demised suites ----
-  const plan = region === "floor" ? planTenants({ W, H, core, tenants }) : null;
+  // ---- tenant test-fit (floor mode): minimal corridor + demised suites (plan memoized in App; SSR computes) ----
+  const plan = region === "floor" ? (planProp || planTenants({ W, H, core, tenants, stairs })) : null;
   const R = (r) => ({ x: X(r.x), y: Y(r.y), w: S(r.w), h: S(r.h) });
   // suite zone fills (bottom) — core + corridor get overdrawn on top so the tint shows only in leasable area
   const planFills = plan ? (
@@ -332,7 +332,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
         return (
           <g key={"sl" + i}>
             <text x={midX} y={midY - 5} fill={INK} fontSize="8" fontWeight="600" textAnchor="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{s.name}</text>
-            <text x={midX} y={midY + 5} fill={INK} fontSize="6.5" textAnchor="middle" opacity="0.78" style={{ fontFamily: "ui-monospace,monospace" }}>{s.areaFt2.toLocaleString()} sf · {s.exitsRequired} exit{s.exitsRequired > 1 ? "s" : ""}</text>
+            <text x={midX} y={midY + 5} fill={INK} fontSize="6.5" textAnchor="middle" opacity="0.78" style={{ fontFamily: "ui-monospace,monospace" }}>{s.areaFt2.toLocaleString()} sf · {s.exitsRequired} exit{s.exitsRequired > 1 ? "s" : ""}{s.commonPathFt ? ` · cp ${s.commonPathFt}ft` : ""}</text>
           </g>
         );
       })}

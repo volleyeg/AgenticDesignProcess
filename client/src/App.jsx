@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { GRID, KIND_COLORS, APPROACHES, SAMPLES, generateOptions, computeMetrics } from "./solver.js";
 import { generateShell } from "./bim/shellgen.js";
+import { planTenants } from "./bim/tenantPlan.js";
 import { buildShellModel } from "./bim/buildShell.js";
 import { buildBimModel } from "./bim/buildFromConstraints.js";
 import { writeIFC } from "./bim/ifc.js";
@@ -186,6 +187,7 @@ export default function App() {
   );
 
   const shell = useMemo(() => { try { return generateShell({ ...shellInputs, sprinklered: true }); } catch { return null; } }, [shellInputs]);
+  const tenantPlan = useMemo(() => { try { return shell && shell.core ? planTenants({ W: shell.W, H: shell.H, core: shell.core, tenants, stairs: shell.core.stairCells || [] }) : null; } catch { return null; } }, [shell, tenants]);
   const shellModel = useMemo(() => (shell ? buildShellModel(shell) : null), [shell]);
 
   function downloadShellIFC() {
@@ -299,9 +301,10 @@ export default function App() {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
                     <div style={{ flex: "1 1 380px", minWidth: 0 }}>
                       <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)", marginBottom: 4 }}>TYPICAL FLOOR PLAN</div>
-                      <PlanArch shell={shell} region="floor" maxW={560} tenants={tenants} />
-                      <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)", marginTop: 4 }}>
-                        {tenants === 1 ? "single tenant — no public corridor; egress to both stairs runs through the suite" : `${tenants} tenants — racetrack corridor; each suite fronts the ring and reaches two stairs`}
+                      <PlanArch shell={shell} region="floor" maxW={560} tenants={tenants} plan={tenantPlan} />
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>
+                        {tenants === 1 ? "single tenant — no public corridor; egress to both stairs runs through the suite" : `${tenants} tenants — minimal corridor (lobby is the pass-through); doors hard against the lift lobby`}
+                        {tenantPlan && tenantPlan.notes.slice(0, 4).map((n, i) => <div key={i} style={{ color: "var(--muted)" }}>· {n}</div>)}
                       </div>
                     </div>
                     <div style={{ flex: "1 1 280px", minWidth: 0 }}>
