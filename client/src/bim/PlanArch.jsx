@@ -290,46 +290,49 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
     </g>
   ) : null;
 
-  // ---- tenant test-fit (floor mode): ring corridor + demised suites ----
-  const plan = region === "floor" ? planTenants({ W, H, core, stairs, tenants }) : null;
+  // ---- tenant test-fit (floor mode): minimal corridor + demised suites ----
+  const plan = region === "floor" ? planTenants({ W, H, core, tenants }) : null;
   const R = (r) => ({ x: X(r.x), y: Y(r.y), w: S(r.w), h: S(r.h) });
+  // suite zone fills (bottom) — core + corridor get overdrawn on top so the tint shows only in leasable area
   const planFills = plan ? (
     <g>
-      {plan.suites.flatMap((s, i) => s.rects.map((r, j) => { const p = R(r); return <rect key={"sf" + i + "_" + j} x={p.x} y={p.y} width={p.w} height={p.h} fill={TENANT[i % 4]} opacity="0.85" />; }))}
+      {plan.suites.map((s, i) => { const p = R(s.zone); return <rect key={"sz" + i} x={p.x} y={p.y} width={p.w} height={p.h} fill={TENANT[i % 4]} opacity="0.8" />; })}
       {plan.corridor.map((r, i) => { const p = R(r); return <rect key={"co" + i} x={p.x} y={p.y} width={p.w} height={p.h} fill={CORRIDOR} />; })}
     </g>
   ) : null;
+  // a door leaf + swing arc on a horizontal corridor wall at (x,y); `swing` = N or S (which way it opens)
+  const tenantDoor = (x0, y0, swing, key) => {
+    const d = S(3.6), x = X(x0), y = Y(y0), s = swing === "N" ? -1 : 1;
+    const hx = x - d / 2, hy = y, lx = hx, ly = y + s * d, ax = x + d / 2, ay = y;
+    return (
+      <g key={key}>
+        <rect x={x - d / 2} y={y - 1.2} width={d} height={2.4} fill={SHEET} />
+        <line x1={hx} y1={hy} x2={lx} y2={ly} stroke={INK} strokeWidth="0.7" />
+        <path d={`M ${lx} ${ly} A ${d} ${d} 0 0 ${s > 0 ? 1 : 0} ${ax} ${ay}`} fill="none" stroke={INK} strokeWidth="0.4" />
+      </g>
+    );
+  };
   const planOver = plan ? (
     <g>
-      {/* demising walls between suites */}
-      {plan.demising.map((d, i) => <line key={"dm" + i} x1={X(d.x1)} y1={Y(d.y1)} x2={X(d.x2)} y2={Y(d.y2)} stroke={POCHE} strokeWidth="2" />)}
-      {/* suite entry doors off the ring */}
-      {plan.suites.map((s, i) => {
-        const e = s.entry; if (!e) return null;
-        const d = S(3.6), x = X(e.x), y = Y(e.y);
-        const into = e.edge; // direction the suite lies relative to the ring edge
-        let lx = x, ly = y, ax = x, ay = y, sweep = 1;
-        if (into === "N") { lx = x - d / 2; ly = y; ax = x - d / 2; ay = y - d; }       // door swings north into suite
-        else if (into === "S") { lx = x - d / 2; ly = y; ax = x - d / 2; ay = y + d; }
-        else if (into === "E") { lx = x; ly = y - d / 2; ax = x + d; ay = y - d / 2; }
-        else { lx = x; ly = y - d / 2; ax = x - d; ay = y - d / 2; }
-        const hx = into === "N" || into === "S" ? x + d / 2 : x, hy = into === "E" || into === "W" ? y + d / 2 : y;
-        return (
-          <g key={"en" + i}>
-            <rect x={into === "N" || into === "S" ? x - d / 2 : x - 1} y={into === "E" || into === "W" ? y - d / 2 : y - 1} width={into === "N" || into === "S" ? d : 2} height={into === "E" || into === "W" ? d : 2} fill={SHEET} />
-            <line x1={hx} y1={hy} x2={lx} y2={ly} stroke={INK} strokeWidth="0.7" />
-            <path d={`M ${lx} ${ly} A ${d} ${d} 0 0 ${sweep} ${ax} ${ay}`} fill="none" stroke={INK} strokeWidth="0.4" />
-          </g>
-        );
+      {/* corridor walls: a wall line on each tenant-facing (long) edge of every leg */}
+      {plan.corridor.map((r, i) => {
+        const p = R(r);
+        return <g key={"cw" + i}>
+          <line x1={p.x} y1={p.y} x2={p.x + p.w} y2={p.y} stroke={POCHE} strokeWidth="1.6" />
+          <line x1={p.x} y1={p.y + p.h} x2={p.x + p.w} y2={p.y + p.h} stroke={POCHE} strokeWidth="1.6" />
+        </g>;
       })}
-      {/* suite labels — name + rentable area, placed in each suite's largest rect */}
+      {/* demising walls */}
+      {plan.demising.map((d, i) => <line key={"dm" + i} x1={X(d.x1)} y1={Y(d.y1)} x2={X(d.x2)} y2={Y(d.y2)} stroke={POCHE} strokeWidth="2" />)}
+      {/* tenant entry / exit doors (swing per IBC 1010.1.2.1) */}
+      {plan.suites.flatMap((s) => s.doors.map((dr, j) => tenantDoor(dr.x, dr.y, dr.swing, "td" + s.id + "_" + j)))}
+      {/* suite labels — name, rentable area, exit count */}
       {plan.suites.map((s, i) => {
-        const big = s.rects.slice().sort((a, b) => b.w * b.h - a.w * a.h)[0]; if (!big) return null;
-        const cx = X(big.x + big.w / 2), cy = Y(big.y + big.h / 2);
+        const p = R(s.zone), midX = p.x + p.w / 2, midY = p.y + p.h * (s.zone.y < core.rect.y ? 0.28 : 0.72);
         return (
           <g key={"sl" + i}>
-            <text x={cx} y={cy - 4} fill={INK} fontSize="8" fontWeight="600" textAnchor="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{s.name}</text>
-            <text x={cx} y={cy + 6} fill={INK} fontSize="6.5" textAnchor="middle" opacity="0.75" style={{ fontFamily: "ui-monospace,monospace" }}>{s.areaFt2.toLocaleString()} sf</text>
+            <text x={midX} y={midY - 5} fill={INK} fontSize="8" fontWeight="600" textAnchor="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{s.name}</text>
+            <text x={midX} y={midY + 5} fill={INK} fontSize="6.5" textAnchor="middle" opacity="0.78" style={{ fontFamily: "ui-monospace,monospace" }}>{s.areaFt2.toLocaleString()} sf · {s.exitsRequired} exit{s.exitsRequired > 1 ? "s" : ""}</text>
           </g>
         );
       })}
