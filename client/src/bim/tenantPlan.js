@@ -180,7 +180,7 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     const east = [rect(balanceX, 0, W - balanceX, sWallY), rect(lobbyX, sWallY, W - lobbyX, neckH), rect(balanceX, sWallY + neckH, W - balanceX, H - sWallY - neckH)];
     suiteRects = [west, east];
     out.demising = [
-      { x1: balanceX, y1: 0, x2: balanceX, y2: cr.y },                         // north field
+      { x1: balanceX, y1: 0, x2: balanceX, y2: nWallY },                       // north field — stops at the ring corridor wall
       { x1: balanceX, y1: sWallY + neckH, x2: balanceX, y2: H },               // south field
       { x1: balanceX, y1: sWallY + neckH, x2: lobbyX, y2: sWallY + neckH },    // jog
       { x1: lobbyX, y1: sWallY + neckH, x2: lobbyX, y2: sWallY },              // neck east wall (to the lobby)
@@ -221,7 +221,18 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     const west = (zone.x + zone.w / 2) < lobbyX;
     const touchesS = zone.y + zone.h > sWallY + 0.5, touchesN = zone.y < nY - 0.5, fullHeight = touchesS && touchesN;
     const lobDoorX = west ? lobbyX - 2.2 : lobbyX + 2.2;
-    const mkDoor = (x, wallY, onSouthLeg, primary) => bfDoor({ x: r1(x), wallY, swing: occ >= 50 ? (onSouthLeg ? "N" : "S") : (onSouthLeg ? "S" : "N"), hingeTowardX: lobbyX, egress: occ >= 50, primary });
+    const mkDoor = (x, wallY, onSouthLeg, primary) => {
+      const egress = occ >= 50;
+      // egress door opens toward the NEAREST exit along its leg (a discharge stair or the lobby) so the leaf swings
+      // in the direction of egress travel and folds out of the path — not always toward the lobby (IBC 1010.1.2.1).
+      let hingeTowardX = lobbyX;
+      if (egress) {
+        const stairXs = exitPts.filter((e) => (onSouthLeg ? e.y > cyMid : e.y < cyMid)).map((e) => e.x);
+        const targets = [lobbyX, ...stairXs];
+        hingeTowardX = targets.reduce((a, b) => (Math.abs(b - x) < Math.abs(a - x) ? b : a), targets[0]);
+      }
+      return bfDoor({ x: r1(x), wallY, swing: egress ? (onSouthLeg ? "N" : "S") : (onSouthLeg ? "S" : "N"), hingeTowardX, egress, primary });
+    };
     // door-able x-range on a leg: ONLY the rects that straddle that leg's tenant wall (so a jog's deep rect can't
     // drag the range onto the demising), kept DOORM clear of the suite's side walls so a leaf never lands on a wall
     const frontage = (onSouthLeg) => {
