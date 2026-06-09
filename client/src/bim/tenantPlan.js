@@ -145,31 +145,38 @@ function suiteEgress(rects, doors, corridorRects, lobby, exits, cr, cell = 3) {
 }
 
 // ---- placement engine (demising as OUTPUT) -------------------------------------------------------------
-// A tenant is wedged into a named corner at an EXACT target SF. It grows its width along the long plate edge
-// first at the half-depth line, then deepens only if width runs out (Eric's rule). The leftover is whatever
-// remains. Net area subtracts the core + corridor footprint inside the block, so the core is wrapped, not used.
-function wedgeBlock(corner, t, W, H, cyMid) {
+// A tenant is wedged into a named corner at an EXACT target SF, growing inside a bounding BOX (its quadrant,
+// optionally capped at a centre line where a same-edge / same-column neighbour reserves the other half). It
+// grows WIDTH along the long edge first at the global half-depth line, then deepens — spilling sideways into
+// empty box width before going deep. Net area subtracts the core + corridor inside the block, so it WRAPS the
+// core. The leftover (free rectangles) is the next tenant's canvas.
+function wedgeInBox(corner, t, box, cyMid) {
   const north = corner[0] === "N", west = corner[1] === "W";
-  if (t <= W) {                                   // phase 1: width t along the long edge, at the half-depth line
-    const w = Math.max(0, Math.min(W, t)), x = west ? 0 : W - w;
-    return north ? rect(x, 0, w, cyMid) : rect(x, cyMid, w, H - cyMid);
+  const { x0, y0, x1, y1 } = box;
+  const halfY = Math.min(Math.max(cyMid, y0), y1);          // global half-depth line, clamped into the box
+  const dShallow = north ? halfY - y0 : y1 - halfY;          // phase-1 depth (to the half line)
+  const wMax = x1 - x0;
+  if (t <= wMax) {                                           // phase 1: width t at the shallow depth
+    const w = Math.max(0, Math.min(wMax, t)), x = west ? x0 : x1 - w;
+    return north ? rect(x, y0, w, dShallow) : rect(x, halfY, w, y1 - halfY);
   }
-  const extra = t - W;                            // phase 2: full width, deepen toward the far edge
-  return north ? rect(0, 0, W, Math.min(H, cyMid + extra)) : rect(0, Math.max(0, cyMid - extra), W, Math.min(H, H - cyMid + extra));
+  const extra = t - wMax;                                    // phase 2: full box width, deepen toward the far edge
+  const h = Math.min(y1 - y0, dShallow + extra);
+  return north ? rect(x0, y0, wMax, h) : rect(x0, y1 - h, wMax, h);
 }
-function solveCut(corner, targetSF, W, H, cyMid, blockers) {
+function solveCutInBox(corner, targetSF, box, cyMid, blockers) {
   const net = (b) => { let a = b.w * b.h; for (const k of blockers) a -= overlap(b, k); return a; };
-  const tMax = W + (corner[0] === "N" ? H - cyMid : cyMid);
+  const tMax = (box.x1 - box.x0) + (box.y1 - box.y0);
   let lo = 0, hi = tMax;
-  for (let i = 0; i < 50; i++) { const m = (lo + hi) / 2; if (net(wedgeBlock(corner, m, W, H, cyMid)) < targetSF) lo = m; else hi = m; }
-  const b = wedgeBlock(corner, (lo + hi) / 2, W, H, cyMid);
+  for (let i = 0; i < 50; i++) { const m = (lo + hi) / 2; if (net(wedgeInBox(corner, m, box, cyMid)) < targetSF) lo = m; else hi = m; }
+  const b = wedgeInBox(corner, (lo + hi) / 2, box, cyMid);
   return { block: b, net: r1(net(b)) };
 }
-function leftoverOf(corner, b, W, H) {            // plate minus a corner-anchored block → an L (≤2 rects)
+function subtractCorner(corner, F, b) {            // free rect F minus a corner-anchored block → an L (≤2 rects)
   const north = corner[0] === "N", west = corner[1] === "W", out = [];
-  if (b.w < W - 0.01) out.push(west ? rect(b.w, b.y, W - b.w, b.h) : rect(0, b.y, W - b.w, b.h));   // beside the block
-  if (b.h < H - 0.01) out.push(north ? rect(0, b.h, W, H - b.h) : rect(0, 0, W, H - b.h));            // the rest of the depth
-  return out.filter((r) => r.w > 0.01 && r.h > 0.01);
+  if (b.w < F.x1 - F.x0 - 0.01) out.push(west ? rect(b.x + b.w, b.y, F.x1 - (b.x + b.w), b.h) : rect(F.x0, b.y, b.x - F.x0, b.h));
+  if (b.h < F.y1 - F.y0 - 0.01) out.push(north ? rect(F.x0, b.y + b.h, F.x1 - F.x0, F.y1 - (b.y + b.h)) : rect(F.x0, F.y0, F.x1 - F.x0, b.y - F.y0));
+  return out.filter((r) => r.w > 0.5 && r.h > 0.5).map((r) => ({ x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h }));
 }
 function clip1D(lo, hi, removes) {                // [lo,hi] minus the remove intervals → surviving sub-segments
   let segs = [[lo, hi]];
@@ -216,25 +223,55 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
   const neckH = Math.min(14, H - sWallY - 2);            // depth of the entry neck that carries A's door to the lobby
   const placed = !!(placements && placements.length);
 
-  if (placed) {                                          // wedge one tenant into its corner at the exact target SF
-    const { corner, targetSF } = placements[0];
+  if (placed) {                                          // wedge tenants in order into their corners at exact SF
     const lobX1est = paxLobby ? paxLobby.rect.x + paxLobby.rect.w : lobbyX + 5, M = 3.5;
-    // estimate the corridor pass-2 will keep for a given block: S leg full; N leg covers the lobby plus any north
-    // remote — which lands at the block's far frontage end from the lobby, so a wide block trims it back.
-    const estCorr = (b) => {
+    const sameEdge = (a, b) => a[0] === b[0] && a[1] !== b[1];   // same N/S, diff E/W → a centre wall at lobbyX
+    const sameCol = (a, b) => a[1] === b[1] && a[0] !== b[0];    // same E/W, diff N/S → a centre wall at cyMid
+    const sortedN = (stairs || []).slice().sort((a, b) => a.rect.x - b.rect.x);
+    const northStairX = sortedN[0] ? r1(sortedN[0].rect.x + sortedN[0].rect.w / 2) : lobbyX;
+    // predict the corridor pass-2 will keep for a set of blocks: S leg full; N leg covers the lobby plus the
+    // farthest north door. A shallow north quadrant doors at its far frontage end (a remote); a full-height
+    // block doors near the west discharge stair instead — so a deep block does NOT drag the leg east.
+    const predictCorridor = (blocks) => {
       let x1 = lobX1est + 3;
-      if (corner[0] === "N") {
+      blocks.forEach((b) => {
+        if (b.y >= nY - 0.5) return;                            // no north frontage → no north door
         const f0 = Math.max(cr.x + M, b.x + M), f1 = Math.min(cr.x + cr.w - M, b.x + b.w - M);
-        x1 = Math.max(x1, (Math.abs(f0 - lobbyX) > Math.abs(f1 - lobbyX) ? f0 : f1) + 3);
-      }
-      x1 = Math.min(cr.x + cr.w, x1);
-      return [cr, sLeg, rect(cr.x, nY, x1 - cr.x, cr.y - nY)];
+        const doorX = b.y + b.h > sWallY + 0.5
+          ? Math.min(f1, Math.max(f0, northStairX))             // full-height: north door clamps toward the west stair
+          : (Math.abs(f0 - lobbyX) > Math.abs(f1 - lobbyX) ? f0 : f1);  // quadrant: remote at the far frontage end
+        x1 = Math.max(x1, doorX + 3);
+      });
+      return [cr, sLeg, rect(cr.x, nY, Math.min(cr.x + cr.w, x1) - cr.x, cr.y - nY)];
     };
-    let sol = solveCut(corner, targetSF, W, H, cyMid, [cr, sLeg, nLeg]);   // pass A: rough
-    sol = solveCut(corner, targetSF, W, H, cyMid, estCorr(sol.block));     // pass B: against the predicted trim
-    suiteRects = [[sol.block]];
-    available = { rects: leftoverOf(corner, sol.block, W, H), corner };
-    out.demising = cutDemising(corner, sol.block, cr, nWallY, sWallY);
+    // each tenant owns a region capped at the global centre lines by its neighbours: a same-edge neighbour
+    // reserves the far E/W half (wall at lobbyX); a same-column or diagonal neighbour reserves the far N/S half
+    // (wall at cyMid). Order-independent, so two tenants always read as clean halves split on a centre line.
+    const regionFor = (corner, others) => {
+      const box = { x0: 0, y0: 0, x1: W, y1: H };
+      for (const o of others) {
+        if (sameEdge(corner, o)) { if (corner[1] === "W") box.x1 = Math.min(box.x1, lobbyX); else box.x0 = Math.max(box.x0, lobbyX); }
+        else { if (corner[0] === "N") box.y1 = Math.min(box.y1, cyMid); else box.y0 = Math.max(box.y0, cyMid); }  // same column or diagonal → split N/S
+      }
+      return box;
+    };
+    // place every tenant against a given corridor estimate; returns the blocks + the free (leftover) rects.
+    const placeAll = (corrBlockers) => {
+      const blocks = [], free = [];
+      placements.forEach((t, i) => {
+        const others = placements.filter((_, j) => j !== i).map((o) => o.corner);
+        const box = regionFor(t.corner, others);
+        const sol = solveCutInBox(t.corner, t.targetSF, box, cyMid, corrBlockers);
+        blocks.push(sol.block);
+        free.push(...subtractCorner(t.corner, box, sol.block));
+      });
+      return { blocks, free };
+    };
+    let pa = placeAll([cr, sLeg, nLeg]);                        // pass A: rough, against full legs
+    const pb = placeAll(predictCorridor(pa.blocks));           // pass B: against the predicted shared corridor → exact
+    suiteRects = pb.blocks.map((b) => [b]);
+    available = { rects: pb.free.map((f) => rect(f.x0, f.y0, f.x1 - f.x0, f.y1 - f.y0)) };
+    out.demising = pb.blocks.flatMap((b, i) => cutDemising(placements[i].corner, b, cr, nWallY, sWallY));
   } else if (n === 2) {
     needS = true;
     // West = everything left of balanceX, PLUS a neck (balanceX..lobbyX) at the corridor so its door reaches the lobby
@@ -361,7 +398,8 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     available.areaFt2 = r1(av);
     out.available = available;
     out.leasableFt2 = r1(out.leasableFt2 + av);
-    out.notes.push(`Placed Tenant A ${out.suites[0].areaFt2.toLocaleString()} sf in the ${available.corner} corner (target ${placements[0].targetSF.toLocaleString()} sf); ${av.toLocaleString()} sf available for the next tenant.`);
+    out.suites.forEach((s, i) => out.notes.push(`Placed ${s.name} ${Math.round(s.areaFt2).toLocaleString()} sf in the ${placements[i].corner} corner (target ${placements[i].targetSF.toLocaleString()} sf).`));
+    if (av > 1) out.notes.push(`${Math.round(av).toLocaleString()} sf available for the next tenant.`);
   }
   return out;
 }
