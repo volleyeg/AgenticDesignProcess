@@ -144,7 +144,49 @@ function suiteEgress(rects, doors, corridorRects, lobby, exits, cr, cell = 3) {
   return { commonPath: Math.max(0, Math.round(cp)), travel: Math.round(tr) };
 }
 
-export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [] }) {
+// ---- placement engine (demising as OUTPUT) -------------------------------------------------------------
+// A tenant is wedged into a named corner at an EXACT target SF. It grows its width along the long plate edge
+// first at the half-depth line, then deepens only if width runs out (Eric's rule). The leftover is whatever
+// remains. Net area subtracts the core + corridor footprint inside the block, so the core is wrapped, not used.
+function wedgeBlock(corner, t, W, H, cyMid) {
+  const north = corner[0] === "N", west = corner[1] === "W";
+  if (t <= W) {                                   // phase 1: width t along the long edge, at the half-depth line
+    const w = Math.max(0, Math.min(W, t)), x = west ? 0 : W - w;
+    return north ? rect(x, 0, w, cyMid) : rect(x, cyMid, w, H - cyMid);
+  }
+  const extra = t - W;                            // phase 2: full width, deepen toward the far edge
+  return north ? rect(0, 0, W, Math.min(H, cyMid + extra)) : rect(0, Math.max(0, cyMid - extra), W, Math.min(H, H - cyMid + extra));
+}
+function solveCut(corner, targetSF, W, H, cyMid, blockers) {
+  const net = (b) => { let a = b.w * b.h; for (const k of blockers) a -= overlap(b, k); return a; };
+  const tMax = W + (corner[0] === "N" ? H - cyMid : cyMid);
+  let lo = 0, hi = tMax;
+  for (let i = 0; i < 50; i++) { const m = (lo + hi) / 2; if (net(wedgeBlock(corner, m, W, H, cyMid)) < targetSF) lo = m; else hi = m; }
+  const b = wedgeBlock(corner, (lo + hi) / 2, W, H, cyMid);
+  return { block: b, net: r1(net(b)) };
+}
+function leftoverOf(corner, b, W, H) {            // plate minus a corner-anchored block → an L (≤2 rects)
+  const north = corner[0] === "N", west = corner[1] === "W", out = [];
+  if (b.w < W - 0.01) out.push(west ? rect(b.w, b.y, W - b.w, b.h) : rect(0, b.y, W - b.w, b.h));   // beside the block
+  if (b.h < H - 0.01) out.push(north ? rect(0, b.h, W, H - b.h) : rect(0, 0, W, H - b.h));            // the rest of the depth
+  return out.filter((r) => r.w > 0.01 && r.h > 0.01);
+}
+function clip1D(lo, hi, removes) {                // [lo,hi] minus the remove intervals → surviving sub-segments
+  let segs = [[lo, hi]];
+  for (const [a, b] of removes) { const next = []; for (const [s, e] of segs) { if (b <= s || a >= e) { next.push([s, e]); continue; } if (a > s) next.push([s, a]); if (b < e) next.push([b, e]); } segs = next; }
+  return segs.filter(([s, e]) => e - s > 0.5);
+}
+function cutDemising(corner, b, cr, nWallY, sWallY) {   // the block's two interior edges, clipped out of the core/corridor
+  const north = corner[0] === "N", west = corner[1] === "W", segs = [];
+  const vx = west ? b.x + b.w : b.x, hy = north ? b.y + b.h : b.y;
+  const vInCore = vx > cr.x - 0.01 && vx < cr.x + cr.w + 0.01;       // vertical edge passes the core band → drop it there
+  for (const [a, c] of clip1D(b.y, b.y + b.h, vInCore ? [[nWallY, sWallY]] : [])) segs.push({ x1: vx, y1: a, x2: vx, y2: c });
+  const hInCore = hy > nWallY - 0.01 && hy < sWallY + 0.01;         // horizontal edge runs through the core/corridor band → drop it there
+  for (const [a, c] of clip1D(b.x, b.x + b.w, hInCore ? [[cr.x, cr.x + cr.w]] : [])) segs.push({ x1: a, y1: hy, x2: c, y2: hy });
+  return segs;
+}
+
+export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [], placements = null }) {
   const cr = core.rect;
   const n = Math.max(1, Math.min(4, tenants | 0));
   const NAMES = ["A", "B", "C", "D"];
@@ -158,7 +200,7 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
   const sWallY = sLeg.y + sLeg.h, nWallY = nLeg.y;      // tenant-facing corridor edges
   const out = { tenants: n, corridorW, corridor: [], demising: [], suites: [], grossFt2: r1(W * H), leasableFt2: 0, notes: [], lobbyX };
 
-  if (n === 1) {
+  if (!placements && n === 1) {
     const rects = [rect(0, 0, W, H)];
     const area = r1(W * H - cr.w * cr.h);
     const stairPts = (stairs || []).map((s) => ({ x: s.rect.x + s.rect.w / 2, y: s.rect.y + s.rect.h / 2 }));
@@ -169,11 +211,31 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     return out;
   }
 
-  // ---- corridor legs + suite rect-sets (with a jogged demising for the 2-tenant case) ----
-  let suiteRects = [], needS = false, needN = false;
+  // ---- corridor legs + suite rect-sets (demising as OUTPUT when a placement spec is given, else equal split) ----
+  let suiteRects = [], needS = false, needN = false, available = null;
   const neckH = Math.min(14, H - sWallY - 2);            // depth of the entry neck that carries A's door to the lobby
+  const placed = !!(placements && placements.length);
 
-  if (n === 2) {
+  if (placed) {                                          // wedge one tenant into its corner at the exact target SF
+    const { corner, targetSF } = placements[0];
+    const lobX1est = paxLobby ? paxLobby.rect.x + paxLobby.rect.w : lobbyX + 5, M = 3.5;
+    // estimate the corridor pass-2 will keep for a given block: S leg full; N leg covers the lobby plus any north
+    // remote — which lands at the block's far frontage end from the lobby, so a wide block trims it back.
+    const estCorr = (b) => {
+      let x1 = lobX1est + 3;
+      if (corner[0] === "N") {
+        const f0 = Math.max(cr.x + M, b.x + M), f1 = Math.min(cr.x + cr.w - M, b.x + b.w - M);
+        x1 = Math.max(x1, (Math.abs(f0 - lobbyX) > Math.abs(f1 - lobbyX) ? f0 : f1) + 3);
+      }
+      x1 = Math.min(cr.x + cr.w, x1);
+      return [cr, sLeg, rect(cr.x, nY, x1 - cr.x, cr.y - nY)];
+    };
+    let sol = solveCut(corner, targetSF, W, H, cyMid, [cr, sLeg, nLeg]);   // pass A: rough
+    sol = solveCut(corner, targetSF, W, H, cyMid, estCorr(sol.block));     // pass B: against the predicted trim
+    suiteRects = [[sol.block]];
+    available = { rects: leftoverOf(corner, sol.block, W, H), corner };
+    out.demising = cutDemising(corner, sol.block, cr, nWallY, sWallY);
+  } else if (n === 2) {
     needS = true;
     // West = everything left of balanceX, PLUS a neck (balanceX..lobbyX) at the corridor so its door reaches the lobby
     const west = [rect(0, 0, balanceX, H), rect(balanceX, sWallY, lobbyX - balanceX, neckH)];
@@ -270,8 +332,12 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
 
   // ---- corridor legs: S leg spans the core (E stair discharges south at its east end). N leg reaches the
   // north-discharging (west) stair and covers the north doors; east surplus trimmed back to the tenants. ----
-  if (prelim.some((p) => p.hasS)) out.corridor.push(sLeg);
-  if (prelim.some((p) => p.hasN)) {
+  // In placement mode the public corridor must reach BOTH discharge directions so a placed tenant always has two
+  // remote exits, even where it fronts only one leg — so include a leg wherever a stair discharges that way.
+  const wantS = placed ? exitPts.some((e) => e.y > cyMid) : prelim.some((p) => p.hasS);
+  const wantN = placed ? exitPts.some((e) => e.y <= cyMid) : prelim.some((p) => p.hasN);
+  if (wantS) out.corridor.push(sLeg);
+  if (wantN) {
     const x1 = Math.min(cr.x + cr.w, Math.max(lobX1, ...northDoorXs) + 3);
     out.corridor.push(rect(cr.x, nY, x1 - cr.x, cr.y - nY));    // x0 = cr.x so the leg meets the north stair
   }
@@ -290,5 +356,12 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     return { id: p.i, name: "Tenant " + NAMES[p.i], rects: p.rects, zone: p.zone, areaFt2: area, occLoad: occ, exitsRequired: p.exits, commonPathFt: p.commonPath, travelFt: p.travel, doors: p.doors };
   });
   out.leasableFt2 = r1(out.suites.reduce((a, s) => a + s.areaFt2, 0));
+  if (placed && available) {                             // leftover, net of the core + corridor it carries — the next tenant's canvas
+    let av = areaOf(available.rects); for (const b of blockers) for (const r of available.rects) av -= overlap(r, b);
+    available.areaFt2 = r1(av);
+    out.available = available;
+    out.leasableFt2 = r1(out.leasableFt2 + av);
+    out.notes.push(`Placed Tenant A ${out.suites[0].areaFt2.toLocaleString()} sf in the ${available.corner} corner (target ${placements[0].targetSF.toLocaleString()} sf); ${av.toLocaleString()} sf available for the next tenant.`);
+  }
   return out;
 }

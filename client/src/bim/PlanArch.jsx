@@ -297,6 +297,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
   const planFills = plan ? (
     <g>
       {plan.suites.flatMap((s, i) => s.rects.map((r, j) => { const p = R(r); return <rect key={"sz" + i + "_" + j} x={p.x} y={p.y} width={p.w} height={p.h} fill={TENANT[i % 4]} opacity="0.8" />; }))}
+      {plan.available && plan.available.rects.map((r, i) => { const p = R(r); return <rect key={"av" + i} x={p.x} y={p.y} width={p.w} height={p.h} fill="#e7e4dc" opacity="0.55" />; })}
       {plan.corridor.map((r, i) => { const p = R(r); return <rect key={"co" + i} x={p.x} y={p.y} width={p.w} height={p.h} fill={CORRIDOR} />; })}
     </g>
   ) : null;
@@ -339,10 +340,15 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
         return (
           <g key={"sl" + i}>
             <text x={midX} y={midY - 5} fill={INK} fontSize="8" fontWeight="600" textAnchor="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{s.name}</text>
-            <text x={midX} y={midY + 5} fill={INK} fontSize="6.5" textAnchor="middle" opacity="0.78" style={{ fontFamily: "ui-monospace,monospace" }}>{s.areaFt2.toLocaleString()} sf · {s.exitsRequired} exit{s.exitsRequired > 1 ? "s" : ""}{s.commonPathFt ? ` · cp ${s.commonPathFt}ft` : ""}</text>
+            <text x={midX} y={midY + 5} fill={INK} fontSize="6.5" textAnchor="middle" opacity="0.78" style={{ fontFamily: "ui-monospace,monospace" }}>{Math.round(s.areaFt2).toLocaleString()} sf · {s.exitsRequired} exit{s.exitsRequired > 1 ? "s" : ""}{s.commonPathFt ? ` · cp ${s.commonPathFt}ft` : ""}</text>
           </g>
         );
       })}
+      {plan.available && (() => {
+        const big = plan.available.rects.reduce((a, b) => (a.w * a.h >= b.w * b.h ? a : b));
+        const p = R(big);
+        return <text x={p.x + p.w / 2} y={p.y + p.h / 2} fill={INK} fontSize="7" textAnchor="middle" opacity="0.5" style={{ fontFamily: "ui-monospace,monospace" }}>Available · {Math.round(plan.available.areaFt2).toLocaleString()} sf</text>;
+      })()}
     </g>
   ) : null;
 
