@@ -211,6 +211,7 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
   out.stairDischargeNorthX = northStairX;                      // renderer: this stair's floor-landing door faces north
   const fullCorr = [sLeg, nLeg], lobbyRect = paxLobby ? paxLobby.rect : null;
   const northDoorXs = [];
+  const DOORM = 3.5;                                            // min clearance from a door's center to a side wall (½ leaf + jamb + buffer)
 
   const prelim = suiteRects.map((rects, i) => {
     const zone = { x: Math.min(...rects.map((r) => r.x)), y: Math.min(...rects.map((r) => r.y)) };
@@ -221,22 +222,26 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     const touchesS = zone.y + zone.h > sWallY + 0.5, touchesN = zone.y < nY - 0.5, fullHeight = touchesS && touchesN;
     const lobDoorX = west ? lobbyX - 2.2 : lobbyX + 2.2;
     const mkDoor = (x, wallY, onSouthLeg, primary) => bfDoor({ x: r1(x), wallY, swing: occ >= 50 ? (onSouthLeg ? "N" : "S") : (onSouthLeg ? "S" : "N"), hingeTowardX: lobbyX, egress: occ >= 50, primary });
-    const frontage = (onSouthLeg) => {                         // suite's door-able x-range on a leg (over the core)
-      const rs = rects.filter((r) => (onSouthLeg ? r.y + r.h > sWallY : r.y < cr.y));
-      if (!rs.length) return [lobbyX - 2, lobbyX + 2];
-      return [Math.max(cr.x + 2, Math.min(...rs.map((r) => r.x)) + 0.5), Math.min(cr.x + cr.w - 2, Math.max(...rs.map((r) => r.x + r.w)) - 0.5)];
+    // door-able x-range on a leg: ONLY the rects that straddle that leg's tenant wall (so a jog's deep rect can't
+    // drag the range onto the demising), kept DOORM clear of the suite's side walls so a leaf never lands on a wall
+    const frontage = (onSouthLeg) => {
+      const w = onSouthLeg ? sWallY : nWallY;
+      const rs = rects.filter((r) => onSouthLeg ? (r.y <= w + 0.01 && r.y + r.h > w + 0.01) : (r.y < w - 0.01 && r.y + r.h >= w - 0.01));
+      if (!rs.length) return [lobbyX, lobbyX];
+      const a = Math.max(cr.x + DOORM, Math.min(...rs.map((r) => r.x)) + DOORM), b = Math.min(cr.x + cr.w - DOORM, Math.max(...rs.map((r) => r.x + r.w)) - DOORM);
+      return a <= b ? [a, b] : [(a + b) / 2, (a + b) / 2];
     };
+    const place = (x, onSouthLeg) => { const [a, b] = frontage(onSouthLeg); return Math.min(b, Math.max(a, x)); };
     let doors, exits, trigger, eg, hasN = false, hasS = false;
     if (fullHeight) {                                          // door on EACH leg → divergent N/S egress
-      const sd = mkDoor(lobDoorX, sWallY, true, true);         // main entry at the lobby (elevator exposure) + south egress
-      const [nf0, nf1] = frontage(false);
-      const nd = mkDoor(Math.min(nf1, Math.max(nf0, northStairX != null ? northStairX : lobDoorX)), nWallY, false, false);  // north egress toward the north stair
+      const sd = mkDoor(place(lobDoorX, true), sWallY, true, true);          // main entry at the lobby + south egress
+      const nd = mkDoor(place(northStairX != null ? northStairX : lobDoorX, false), nWallY, false, false);  // north egress toward the north stair
       doors = [sd, nd]; northDoorXs.push(nd.x); hasS = hasN = true;
       exits = 2; trigger = "full-height — divergent N/S exits";
       eg = suiteEgress(rects, doors, fullCorr, lobbyRect, exitPts, cr);
     } else {                                                   // quadrant fronts a single leg
       const onS = touchesS, wallY = onS ? sWallY : nWallY;
-      const primary = mkDoor(lobDoorX, wallY, onS, true);
+      const primary = mkDoor(place(lobDoorX, onS), wallY, onS, true);
       doors = [primary]; if (onS) hasS = true; else { hasN = true; northDoorXs.push(primary.x); }
       const e1 = suiteEgress(rects, [primary], fullCorr, lobbyRect, exitPts, cr);
       exits = occ > ONE_EXIT_MAX_OCC || e1.commonPath > COMMON_PATH_MAX ? 2 : 1;
