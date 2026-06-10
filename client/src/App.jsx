@@ -112,6 +112,10 @@ export default function App() {
   const [viewMode, setViewMode] = useState("2d");
   const [shellInputs, setShellInputs] = useState({ areaFt2: 25000, aspect: 1.6, coreType: "central", corePosition: "center", stories: 12, program: "office" });
   const [tenants, setTenants] = useState(1);
+  const [tenantMode, setTenantMode] = useState("split");   // "split" = equal count, "place" = by corner + target SF
+  const [placements, setPlacements] = useState([{ corner: "NW", targetSF: 6000 }, { corner: "NE", targetSF: 4500 }]);
+  const setPlace = (i, patch) => setPlacements((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  const nextCorner = (ps) => ["NW", "NE", "SW", "SE"].find((c) => !ps.some((p) => p.corner === c)) || "SE";
   const [shellView, setShellView] = useState("2d");
 
   useEffect(() => { setRunCount(parseInt(localStorage.getItem("forge:runs") || "0")); }, []);
@@ -187,7 +191,11 @@ export default function App() {
   );
 
   const shell = useMemo(() => { try { return generateShell({ ...shellInputs, sprinklered: true }); } catch { return null; } }, [shellInputs]);
-  const tenantPlan = useMemo(() => { try { return shell && shell.core ? planTenants({ W: shell.W, H: shell.H, core: shell.core, tenants, stairs: shell.core.stairCells || [] }) : null; } catch { return null; } }, [shell, tenants]);
+  const tenantPlan = useMemo(() => { try {
+    if (!shell || !shell.core) return null;
+    const base = { W: shell.W, H: shell.H, core: shell.core, stairs: shell.core.stairCells || [] };
+    return tenantMode === "place" && placements.length ? planTenants({ ...base, placements }) : planTenants({ ...base, tenants });
+  } catch { return null; } }, [shell, tenants, tenantMode, placements]);
   const shellModel = useMemo(() => (shell ? buildShellModel(shell) : null), [shell]);
 
   function downloadShellIFC() {
@@ -287,12 +295,38 @@ export default function App() {
                 <option value="center">center</option><option value="north">north</option><option value="south">south</option><option value="east">east</option><option value="west">west</option>
               </select>
             </label>
-            <label className="sfield">tenants
-              <select value={tenants} onChange={(e) => setTenants(+e.target.value)} className="sinp">
-                <option value={1}>1 — full floor</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option>
+            <label className="sfield">layout
+              <select value={tenantMode} onChange={(e) => setTenantMode(e.target.value)} className="sinp">
+                <option value="split">equal split</option><option value="place">place by corner</option>
               </select>
             </label>
+            {tenantMode === "split" ? (
+              <label className="sfield">tenants
+                <select value={tenants} onChange={(e) => setTenants(+e.target.value)} className="sinp">
+                  <option value={1}>1 — full floor</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option>
+                </select>
+              </label>
+            ) : null}
           </div>
+
+          {tenantMode === "place" && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end", marginBottom: 8 }}>
+              {placements.map((p, i) => (
+                <div key={i} style={{ display: "flex", gap: 4, alignItems: "flex-end" }}>
+                  <label className="sfield">corner
+                    <select value={p.corner} onChange={(e) => setPlace(i, { corner: e.target.value })} className="sinp">
+                      <option value="NW">NW</option><option value="NE">NE</option><option value="SW">SW</option><option value="SE">SE</option>
+                    </select>
+                  </label>
+                  <label className="sfield">target sf
+                    <input type="number" value={p.targetSF} step={250} min={1000} onChange={(e) => setPlace(i, { targetSF: +e.target.value })} className="sinp" style={{ width: 78 }} />
+                  </label>
+                  {placements.length > 1 && <button onClick={() => setPlacements((ps) => ps.filter((_, j) => j !== i))} className="sinp" style={{ cursor: "pointer", padding: "4px 8px" }}>×</button>}
+                </div>
+              ))}
+              {placements.length < 4 && <button onClick={() => setPlacements((ps) => [...ps, { corner: nextCorner(ps), targetSF: 5000 }])} className="sinp" style={{ cursor: "pointer", padding: "4px 8px" }}>+ tenant</button>}
+            </div>
+          )}
 
           {shell && shellModel && (
             <>
@@ -301,10 +335,10 @@ export default function App() {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
                     <div style={{ flex: "1 1 380px", minWidth: 0 }}>
                       <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)", marginBottom: 4 }}>TYPICAL FLOOR PLAN</div>
-                      <PlanArch shell={shell} region="floor" maxW={560} tenants={tenants} plan={tenantPlan} />
+                      <PlanArch shell={shell} region="floor" maxW={560} tenants={tenantMode === "place" ? placements.length : tenants} plan={tenantPlan} />
                       <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>
-                        {tenants === 1 ? "single tenant — no public corridor; egress to both stairs runs through the suite" : `${tenants} tenants — minimal corridor (lobby is the pass-through); doors hard against the lift lobby`}
-                        {tenantPlan && tenantPlan.notes.slice(0, 4).map((n, i) => <div key={i} style={{ color: "var(--muted)" }}>· {n}</div>)}
+                        {tenantMode === "place" ? "placed tenants — each wedged into its corner at target SF; demising is the output, leftover shown as available" : tenants === 1 ? "single tenant — no public corridor; egress to both stairs runs through the suite" : `${tenants} tenants — minimal corridor (lobby is the pass-through); doors hard against the lift lobby`}
+                        {tenantPlan && (tenantMode === "place" ? tenantPlan.notes.filter((n) => n.startsWith("Placed") || n.includes("available")) : tenantPlan.notes.slice(0, 4)).map((n, i) => <div key={i} style={{ color: n.includes("short") ? "#b3261e" : "var(--muted)" }}>· {n}</div>)}
                       </div>
                     </div>
                     <div style={{ flex: "1 1 280px", minWidth: 0 }}>
