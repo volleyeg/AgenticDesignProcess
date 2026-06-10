@@ -398,7 +398,11 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     available.areaFt2 = r1(av);
     out.available = available;
     out.leasableFt2 = r1(out.leasableFt2 + av);
-    out.suites.forEach((s, i) => out.notes.push(`Placed ${s.name} ${Math.round(s.areaFt2).toLocaleString()} sf in the ${placements[i].corner} corner (target ${placements[i].targetSF.toLocaleString()} sf).`));
+    out.suites.forEach((s, i) => {
+      const short = r1(placements[i].targetSF - s.areaFt2);   // couldn't reach target inside its quadrant
+      if (short > 5) { s.shortFt2 = short; s.targetFt2 = placements[i].targetSF; }
+      out.notes.push(`Placed ${s.name} ${Math.round(s.areaFt2).toLocaleString()} sf in the ${placements[i].corner} corner (target ${placements[i].targetSF.toLocaleString()} sf)${short > 5 ? ` — ${Math.round(short).toLocaleString()} sf short, won't fit` : ""}.`);
+    });
     if (av > 1) out.notes.push(`${Math.round(av).toLocaleString()} sf available for the next tenant.`);
   }
   return out;

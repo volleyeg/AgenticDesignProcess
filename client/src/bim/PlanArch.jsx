@@ -341,6 +341,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
           <g key={"sl" + i}>
             <text x={midX} y={midY - 5} fill={INK} fontSize="8" fontWeight="600" textAnchor="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{s.name}</text>
             <text x={midX} y={midY + 5} fill={INK} fontSize="6.5" textAnchor="middle" opacity="0.78" style={{ fontFamily: "ui-monospace,monospace" }}>{Math.round(s.areaFt2).toLocaleString()} sf · {s.exitsRequired} exit{s.exitsRequired > 1 ? "s" : ""}{s.commonPathFt ? ` · cp ${s.commonPathFt}ft` : ""}</text>
+            {s.shortFt2 ? <text x={midX} y={midY + 14} fill="#b3261e" fontSize="6" textAnchor="middle" style={{ fontFamily: "ui-monospace,monospace" }}>{Math.round(s.shortFt2).toLocaleString()} sf short of {Math.round(s.targetFt2).toLocaleString()} target</text> : null}
           </g>
         );
       })}
