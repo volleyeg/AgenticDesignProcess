@@ -255,6 +255,9 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
       }
       return box;
     };
+    // a leftover only stands alone if it could actually be leased; anything smaller is a sliver the adjacent
+    // tenant is forced to absorb (no unleasable scraps left floating between suites).
+    const MIN_LEASE_SF = 2000, MIN_LEASE_DIM = 20;
     // place every tenant against a given corridor estimate; returns the blocks + the free (leftover) rects.
     const placeAll = (corrBlockers) => {
       const blocks = [], free = [];
@@ -262,8 +265,16 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
         const others = placements.filter((_, j) => j !== i).map((o) => o.corner);
         const box = regionFor(t.corner, others);
         const sol = solveCutInBox(t.corner, t.targetSF, box, cyMid, corrBlockers);
-        blocks.push(sol.block);
-        free.push(...subtractCorner(t.corner, box, sol.block));
+        const b = sol.block, north = t.corner[0] === "N", west = t.corner[1] === "W";
+        const restW = (box.x1 - box.x0) - b.w, restH = (box.y1 - box.y0) - b.h;
+        const wViable = restW >= MIN_LEASE_DIM && restW * b.h >= MIN_LEASE_SF;          // strip beside the suite
+        const hViable = restH >= MIN_LEASE_DIM && (box.x1 - box.x0) * restH >= MIN_LEASE_SF;  // band beyond it
+        let gx0 = b.x, gy0 = b.y, gx1 = b.x + b.w, gy1 = b.y + b.h;
+        if (restW > 0.5 && !wViable) { if (west) gx1 = box.x1; else gx0 = box.x0; }     // absorb an unleasable sliver beside it
+        if (restH > 0.5 && !hViable) { if (north) gy1 = box.y1; else gy0 = box.y0; }    // absorb an unleasable band beyond it
+        const grown = rect(gx0, gy0, gx1 - gx0, gy1 - gy0);
+        blocks.push(grown);
+        free.push(...subtractCorner(t.corner, box, grown));                            // what remains is a leasable suite
       });
       return { blocks, free };
     };
@@ -399,9 +410,10 @@ export function planTenants({ W, H, core, tenants = 1, corridorW = 6, stairs = [
     out.available = available;
     out.leasableFt2 = r1(out.leasableFt2 + av);
     out.suites.forEach((s, i) => {
-      const short = r1(placements[i].targetSF - s.areaFt2);   // couldn't reach target inside its quadrant
-      if (short > 5) { s.shortFt2 = short; s.targetFt2 = placements[i].targetSF; }
-      out.notes.push(`Placed ${s.name} ${Math.round(s.areaFt2).toLocaleString()} sf in the ${placements[i].corner} corner (target ${placements[i].targetSF.toLocaleString()} sf)${short > 5 ? ` — ${Math.round(short).toLocaleString()} sf short, won't fit` : ""}.`);
+      const tgt = placements[i].targetSF, delta = r1(tgt - s.areaFt2);   // <0 means it absorbed an unleasable sliver
+      if (delta > 5) { s.shortFt2 = delta; s.targetFt2 = tgt; }
+      const tail = delta > 5 ? ` — ${Math.round(delta).toLocaleString()} sf short, won't fit` : delta < -5 ? ` — took ${Math.round(-delta).toLocaleString()} sf extra (no leasable remnant)` : "";
+      out.notes.push(`Placed ${s.name} ${Math.round(s.areaFt2).toLocaleString()} sf in the ${placements[i].corner} corner (target ${tgt.toLocaleString()} sf)${tail}.`);
     });
     if (av > 1) out.notes.push(`${Math.round(av).toLocaleString()} sf available for the next tenant.`);
   }

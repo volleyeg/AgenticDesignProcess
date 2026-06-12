@@ -345,7 +345,7 @@ export default function PlanArch({ shell, region = "floor", maxW = 720, tenants 
           </g>
         );
       })}
-      {plan.available && (() => {
+      {plan.available && plan.available.rects.length > 0 && plan.available.areaFt2 > 1 && (() => {
         const big = plan.available.rects.reduce((a, b) => (a.w * a.h >= b.w * b.h ? a : b));
         const p = R(big);
         return <text x={p.x + p.w / 2} y={p.y + p.h / 2} fill={INK} fontSize="7" textAnchor="middle" opacity="0.5" style={{ fontFamily: "ui-monospace,monospace" }}>Available · {Math.round(plan.available.areaFt2).toLocaleString()} sf</text>;
